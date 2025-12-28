@@ -62,7 +62,7 @@ class ClientWalletBalanceController extends Controller
                             'name' => $token->token_name ?? '',
                             'symbol' => $token->symbol ?? '',
                             'balance' => number_format($balance, 4, '.', ''), // 4 decimal
-                            'icon' => $token->icon ? url('storage/' . $token->icon) : null,
+                            'icon' => $token->icon ? url('uploads/token_icons/' . $token->icon) : null,
                         ];
                     }
                 }
@@ -71,7 +71,7 @@ class ClientWalletBalanceController extends Controller
                     $list[] = [
                         'id' => $chain->id,
                         'chain' => $chain->chain_name,
-                        'icon' => $chain->icon ? url('storage/' . $chain->icon ) : null,
+                        'icon' => $chain->icon ? url('uploads/chain_icons/' . $chain->icon ) : null,
                         'native_balance' => number_format($nativeBalance, 4, '.', ''),
                         'tokens' => $tokenBalances,
                     ];
