@@ -62,7 +62,7 @@ class ClientWalletBalanceController extends Controller
                             'name' => $token->token_name ?? '',
                             'symbol' => $token->symbol ?? '',
                             'balance' => number_format($balance, 4, '.', ''), // 4 decimal
-                            'icon' => $token->icon ?? null,
+                            'icon' => $token->icon ? url('storage/' . $token->icon) : null,
                         ];
                     }
                 }
