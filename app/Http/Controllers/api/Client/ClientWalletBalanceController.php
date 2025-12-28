@@ -71,7 +71,7 @@ class ClientWalletBalanceController extends Controller
                     $list[] = [
                         'id' => $chain->id,
                         'chain' => $chain->chain_name,
-                        'icon' => $chain->icon ? url('uploads/chain_icons/' . $chain->icon ) : null,
+                        'icon' => $chain->icon ? url('uploads/chain_icons/' . $chain->icon) : null,
                         'native_balance' => number_format($nativeBalance, 4, '.', ''),
                         'tokens' => $tokenBalances,
                     ];
