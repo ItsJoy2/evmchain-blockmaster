@@ -11,9 +11,11 @@ use App\Http\Controllers\admin\PaymentJobController;
 use App\Http\Controllers\admin\TransactionController;
 
 Route::get('/', function () {
-    return view('welcome');
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+    return redirect()->route('login');
 });
-
 
 Route::middleware('auth')->prefix('admin')->group(function () {
     Route::post('users/{user}/reveal-wallet-key', [UserController::class, 'revealWalletKey'])
