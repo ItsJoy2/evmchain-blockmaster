@@ -9,6 +9,7 @@ use App\Http\Controllers\admin\DashboardController;
 use App\Http\Controllers\admin\TokenListController;
 use App\Http\Controllers\admin\PaymentJobController;
 use App\Http\Controllers\admin\TransactionController;
+use App\Http\Controllers\admin\GeneralSettingsController;
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -41,6 +42,10 @@ Route::middleware('auth')->prefix('admin')->group(function () {
 
     Route::resource('token', TokenListController::class)->except(['show', 'create', 'edit']);
     Route::resource('chain', ChainListController::class)->except(['show', 'create', 'edit']);
+
+        // General Settings
+    Route::get('/general-settings', [GeneralSettingsController::class, 'index'])->name('admin.general.settings');
+    Route::post('/general-settings', [GeneralSettingsController::class, 'update'])->name('admin.general.settings.update');
 });
 
 require __DIR__.'/auth.php';

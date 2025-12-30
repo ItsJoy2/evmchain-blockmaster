@@ -5,7 +5,9 @@
         <!-- Logo Header -->
         <div class="logo-header" data-background-color="dark">
             <a href="/admin/dashboard" class="logo">
-                <img src="/logo.png" alt="App Name" class="navbar-brand" height="20">
+                @if($generalSettings && $generalSettings->logo)
+                    <img src="{{ asset('storage/' . $generalSettings->logo) }}" alt="{{ $generalSettings->app_name ?? '3twentyPay' }}" class="navbar-brand" height="50">
+                @endif
             </a>
             <div class="nav-toggle">
                 <button class="btn btn-toggle toggle-sidebar">
@@ -106,6 +108,7 @@
                             <li><a href="chain"><span class="sub-item">Chain List</span></a></li>
                             <li><a href="/withdraws/settings"><span class="sub-item">Withdraws Settings</span></a></li>
                             <li><a href="/ReferralsSettings"><span class="sub-item">Referral Settings</span></a></li>
+                            <li><a href="/admin/general-settings"><span class="sub-item">App Settings</span></a></li>
                         </ul>
                     </div>
                 </li>
