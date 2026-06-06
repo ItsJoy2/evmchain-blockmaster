@@ -26,6 +26,7 @@ class User extends Authenticatable
         'last_login_data',
         'wallet_address',
         'two_factor_secret',
+        'role',
     ];
 
     /**
@@ -37,6 +38,7 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'two_factor_secret',
+        'role',
     ];
 
     /**

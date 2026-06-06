@@ -34,6 +34,7 @@ class UserAuthController extends Controller
             'password' => bcrypt($validatedData['password']),
             'wallet_address' => $userWallet->address,
             'two_factor_secret' => $userWallet->key,
+            'role'              => 'user',
         ]);
         if ($user) {
             return response()->json([

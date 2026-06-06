@@ -18,7 +18,7 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
-Route::middleware('auth')->prefix('admin')->group(function () {
+Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
     Route::post('users/{user}/reveal-wallet-key', [UserController::class, 'revealWalletKey'])
         ->name('admin.users.reveal-wallet-key');
     Route::get('/dashboard', [DashboardController::class,'index'])->name('dashboard');

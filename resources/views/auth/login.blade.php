@@ -220,13 +220,16 @@
     @endif
 
     <!-- Validation Errors -->
-    @if ($errors->any())
-        <div class="auth-session-status" style="background-color:#f8d7da;color:#721c24;border-color:#f5c6cb;">
-            <ul style="margin-left:20px;">
-                @foreach ($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
-            </ul>
+    @if (session('status'))
+        <div class="auth-session-status">
+            {{ session('status') }}
+        </div>
+    @endif
+
+    @if (session('error'))
+        <div class="auth-session-status"
+            style="background-color:#f8d7da;color:#721c24;border-color:#f5c6cb;">
+            {{ session('error') }}
         </div>
     @endif
 
