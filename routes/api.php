@@ -34,14 +34,17 @@ Route::post('create-account', [UserAuthController::class, 'createAccount']);
 Route::post('create-login', [UserAuthController::class, 'login']);
 Route::post('login-with-google', [UserAuthController::class, 'loginWithGoogleToken']);
 
+Route::middleware('license.signature')->group(function () {
+    //invoice
+    Route::post('create_invoice',[InvoiceCreateController::class,'createInvoice']);
+    Route::post('payout', [Withdrawal::class, 'payout']);
+    Route::post('deposit', [Deposit::class, 'deposit']);
+    Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
+    Route::middleware(['throttle:20,1'])->get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
+    Route::get('invoice/{invoice_id}', [PaymentJobController::class, 'invoiceData']);
+    Route::get('test', [PaymentJobController::class, 'allBalance']);
+    Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
+});
 
-//invoice
-Route::post('/create_invoice',[InvoiceCreateController::class,'createInvoice']);
-Route::get('/last-transactions', [PaymentJobController::class, 'Jobs']);
-Route::post('/payout', [Withdrawal::class, 'payout']);
-Route::post('/deposit', [Deposit::class, 'deposit']);
-Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
-Route::middleware(['throttle:20,1'])->get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
-Route::get('invoice/{invoice_id}', [PaymentJobController::class, 'invoiceData']);
-Route::get('test', [PaymentJobController::class, 'allBalance']);
-Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
+
+Route::get('last-transactions', [PaymentJobController::class, 'Jobs']);
