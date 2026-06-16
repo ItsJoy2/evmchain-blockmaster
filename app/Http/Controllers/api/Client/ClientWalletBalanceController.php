@@ -96,13 +96,14 @@ class ClientWalletBalanceController extends Controller
     {
         $data = $request->validate([
             'chain_id'         => 'required|integer',
+            'user_id'          => 'required|integer|exists:users,id',
             'type'             => 'required|string',
             'contract_address' => 'nullable|string',
             'address'          => 'required|string',
         ]);
 
         // Check user existence (already validated with `exists`, so this is optional unless you need the model)
-        $user = $request->user();
+        $user = User::find($data['user_id']);
         if (!$user) {
             return response()->json([
                 'status'  => false,
