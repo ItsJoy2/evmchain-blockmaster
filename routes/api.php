@@ -40,7 +40,7 @@ Route::middleware('license.signature')->group(function () {
     Route::post('payout', [Withdrawal::class, 'payout']);
     // Route::post('deposit', [Deposit::class, 'deposit']);
     // Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
-    // Route::middleware(['throttle:20,1'])->get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
+    Route::middleware(['throttle:20,1'])->get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
     Route::get('invoice/{invoice_id}', [PaymentJobController::class, 'invoiceData']);
     Route::get('test', [PaymentJobController::class, 'allBalance']);
     Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
@@ -48,5 +48,5 @@ Route::middleware('license.signature')->group(function () {
 
     Route::post('deposit', [Deposit::class, 'deposit']);
     Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
-    Route::middleware(['throttle:20,1'])->get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
+    // Route::middleware(['throttle:20,1'])->get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
     Route::get('last-transactions', [PaymentJobController::class, 'Jobs']);
