@@ -176,6 +176,7 @@ class PaymentJobController extends Controller
                 'payment_status' => 'completed',
                 'message' => 'New transaction detected!',
                 'balance' => $balance,
+                'txHash' => 'check-in-scan',
             ]);
         }
 
