@@ -176,7 +176,7 @@ class PaymentJobController extends Controller
                 'payment_status' => 'completed',
                 'message' => 'New transaction detected!',
                 'balance' => $balance,
-                'txHash' => 'check-in-scan',
+                'txHash' => $rpc->tx_hash,
             ]);
         }
 
@@ -185,6 +185,7 @@ class PaymentJobController extends Controller
             'payment_status' => $rpc->status,
             'message' => 'No new transaction found.',
             'balance' => $balance,
+            'txHash' => $rpc->tx_hash,
         ]);
     }
 
