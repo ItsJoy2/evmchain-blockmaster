@@ -97,6 +97,48 @@ class InvoiceCreateController extends Controller
 
         $license = $request->attributes->get('license');
 
+        if (!$license) {
+            return response()->json([
+                'status' => false,
+                'message' => 'License not found.'
+            ], 401);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | DOMAIN CHECK (IMPORTANT)
+        |--------------------------------------------------------------------------
+        */
+
+        $webhookHost = parse_url($validated['webhook_url'], PHP_URL_HOST);
+
+        if (!$webhookHost) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid webhook URL.'
+            ], 422);
+        }
+
+        $webhookHost = strtolower(preg_replace('/^www\./', '', $webhookHost));
+        $licensedHost = strtolower(preg_replace('/^www\./', '', $license->domain));
+
+        $isValidDomain =
+            $webhookHost === $licensedHost ||
+            str_ends_with($webhookHost, '.' . $licensedHost);
+
+        if (!$isValidDomain) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Webhook domain is not allowed for this license.'
+            ], 403);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | TOKEN VALIDATION
+        |--------------------------------------------------------------------------
+        */
+
         if (
             $validated['type'] === 'token' &&
             empty($validated['contract_address'])
@@ -107,10 +149,13 @@ class InvoiceCreateController extends Controller
             ], 422);
         }
 
-        $chain = ChainList::where(
-            'chain_id',
-            $validated['chain_id']
-        )->first();
+        /*
+        |--------------------------------------------------------------------------
+        | CHAIN VALIDATION
+        |--------------------------------------------------------------------------
+        */
+
+        $chain = ChainList::where('chain_id', $validated['chain_id'])->first();
 
         if (!$chain) {
             return response()->json([
@@ -119,17 +164,26 @@ class InvoiceCreateController extends Controller
             ], 422);
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | WALLET GENERATION
+        |--------------------------------------------------------------------------
+        */
+
         $wallet = $this->createWallet->createAddress();
 
-        if (
-            empty($wallet->address) ||
-            empty($wallet->key)
-        ) {
+        if (empty($wallet->address) || empty($wallet->key)) {
             return response()->json([
                 'status' => false,
                 'message' => 'Wallet generation failed.'
             ], 500);
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CREATE JOB
+        |--------------------------------------------------------------------------
+        */
 
         $job = PaymentJobs::create([
             'wallet_address'   => $wallet->address,

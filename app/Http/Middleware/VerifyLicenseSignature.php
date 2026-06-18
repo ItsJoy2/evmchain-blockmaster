@@ -38,14 +38,7 @@ class VerifyLicenseSignature
             ], 401);
         }
 
-        if (!$license->user) {
-            return response()->json([
-                'status' => false,
-                'message' => 'License owner not found.'
-            ], 401);
-        }
-
-        if (empty($license->user->user_secret)) {
+        if (!$license->user || empty($license->user->user_secret)) {
             return response()->json([
                 'status' => false,
                 'message' => 'User secret not configured.'
@@ -53,55 +46,13 @@ class VerifyLicenseSignature
         }
 
         /**
-         * Timestamp Validation
-         * Request expires after 5 minutes
+         * Timestamp Validation (5 minutes window)
          */
-        if (abs(time() - (int)$timestamp) > 300) {
+        if (abs(time() - (int) $timestamp) > 300) {
             return response()->json([
                 'status' => false,
                 'message' => 'Request timestamp expired.'
             ], 401);
-        }
-
-        /**
-         * Domain Validation
-         * webhook_url domain must match licensed domain
-         */
-        $webhookUrl = $request->input('webhook_url');
-
-        if (!$webhookUrl) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Webhook URL is required.'
-            ], 422);
-        }
-
-        $webhookHost = parse_url($webhookUrl, PHP_URL_HOST);
-
-        if (!$webhookHost) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Invalid webhook URL.'
-            ], 422);
-        }
-
-        $webhookHost = strtolower(
-            preg_replace('/^www\./', '', $webhookHost)
-        );
-
-        $licensedHost = strtolower(
-            preg_replace('/^www\./', '', $license->domain)
-        );
-
-        $isValidDomain =
-            $webhookHost === $licensedHost ||
-            str_ends_with($webhookHost, '.' . $licensedHost);
-
-        if (!$isValidDomain) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Webhook domain does not match licensed domain.'
-            ], 403);
         }
 
         /**
