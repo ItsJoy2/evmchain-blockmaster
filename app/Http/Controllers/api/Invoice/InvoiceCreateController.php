@@ -106,7 +106,20 @@ class InvoiceCreateController extends Controller
 
         /*
         |--------------------------------------------------------------------------
-        | DOMAIN CHECK (IMPORTANT)
+        | LICENSE EXPIRY CHECK
+        |--------------------------------------------------------------------------
+        */
+
+        if (!empty($license->expires_at) && now()->greaterThan($license->expires_at)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'License has expired.'
+            ], 403);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | DOMAIN CHECK
         |--------------------------------------------------------------------------
         */
 

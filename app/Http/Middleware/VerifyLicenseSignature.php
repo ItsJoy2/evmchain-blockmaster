@@ -26,6 +26,9 @@ class VerifyLicenseSignature
             ], 401);
         }
 
+        /**
+         * License check (only key + expiry)
+         */
         $license = DomainLicense::with('user')
             ->where('license_key', $licenseKey)
             ->where('expires_at', '>', now())
@@ -46,7 +49,7 @@ class VerifyLicenseSignature
         }
 
         /**
-         * Timestamp Validation (5 minutes window)
+         * Timestamp validation (5 minutes window)
          */
         if (abs(time() - (int) $timestamp) > 300) {
             return response()->json([
@@ -56,13 +59,12 @@ class VerifyLicenseSignature
         }
 
         /**
-         * Signature Verification
+         * Signature verification
+         * (license based, no domain)
          */
-        $payload = $request->getContent();
-
         $expectedSignature = hash_hmac(
             'sha256',
-            $timestamp . $payload,
+            $timestamp . $licenseKey,
             $license->user->user_secret
         );
 
@@ -73,6 +75,9 @@ class VerifyLicenseSignature
             ], 401);
         }
 
+        /**
+         * Pass license to controller
+         */
         $request->attributes->set('license', $license);
 
         return $next($request);
