@@ -172,11 +172,8 @@ class PackageController extends Controller
 
     public function store(Request $request)
     {
-        // $rpurl = 'https://bsc-dataseed.binance.org/';
-        // $contractAddress = '0x55d398326f99059fF775485246999027B3197955';
-
-        $rpurl = 'https://rpc-msc.mindchain.info/';
-        $contractAddress = '0xaC264f337b2780b9fd277cd9C9B2149B43F87904';
+        $rpurl = 'https://bsc-dataseed.binance.org/';
+        $contractAddress = '0x55d398326f99059fF775485246999027B3197955';
 
         $validate = $request->validate([
             'package_id' => 'required|exists:packages,id',
@@ -208,8 +205,7 @@ class PackageController extends Controller
                 '0xDD4A92c37C176F83B0aeb127483009E5b51E65E5',
                 $this->tokenManage->decrypt($user->two_factor_secret),
                 $rpurl,
-                // '56',
-                '9996',
+                '56',
                 $user->wallet_address,
                 $this->tokenManage->decrypt($user->two_factor_secret),
                 $package->price
