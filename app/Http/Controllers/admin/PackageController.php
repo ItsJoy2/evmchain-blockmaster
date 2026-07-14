@@ -18,19 +18,33 @@ class PackageController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'duration' => 'required|string|max:255',
-            'status' => 'required|boolean',
+            'name'              => 'required|string|max:255',
+            'price'             => 'required|numeric|min:0',
+            'transaction_limit' => 'required|integer|min:1',
+            'duration'          => 'required|integer|min:1',
+            'status'            => 'required|boolean',
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            return response()->json([
+                'success' => false,
+                'errors'  => $validator->errors()
+            ], 422);
         }
 
-        $package = Package::create($request->only(['name', 'price', 'duration', 'status']));
+        $package = Package::create([
+            'name'              => $request->name,
+            'price'             => $request->price,
+            'transaction_limit' => $request->transaction_limit,
+            'duration'          => $request->duration,
+            'status'            => $request->status,
+        ]);
 
-        return response()->json(['success' => true, 'package' => $package]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Package created successfully.',
+            'package' => $package
+        ]);
     }
 
     public function update(Request $request, $id)
@@ -38,19 +52,33 @@ class PackageController extends Controller
         $package = Package::findOrFail($id);
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'duration' => 'required|string|max:255',
-            'status' => 'required|boolean',
+            'name'              => 'required|string|max:255',
+            'price'             => 'required|numeric|min:0',
+            'transaction_limit' => 'required|integer|min:1',
+            'duration'          => 'required|integer|min:1',
+            'status'            => 'required|boolean',
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            return response()->json([
+                'success' => false,
+                'errors'  => $validator->errors()
+            ], 422);
         }
 
-        $package->update($request->only(['name', 'price', 'duration', 'status']));
+        $package->update([
+            'name'              => $request->name,
+            'price'             => $request->price,
+            'transaction_limit' => $request->transaction_limit,
+            'duration'          => $request->duration,
+            'status'            => $request->status,
+        ]);
 
-        return response()->json(['success' => true, 'package' => $package]);
+        return response()->json([
+            'success' => true,
+            'message' => 'Package updated successfully.',
+            'package' => $package
+        ]);
     }
 
     public function destroy($id)

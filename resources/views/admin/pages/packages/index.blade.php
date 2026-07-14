@@ -10,44 +10,61 @@
         <div class="card-body table-responsive">
             <table class="table table-striped table-hover">
                 <thead class="thead-dark">
-                <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th>Duration</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Price</th>
+                        <th>Transaction Limit</th>
+                        <th>Duration (Days)</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
                 </thead>
                 <tbody>
-                @forelse($packages as $index => $package)
+                    @forelse($packages as $index => $package)
                     <tr data-id="{{ $package->id }}">
                         <td>{{ $index + $packages->firstItem() }}</td>
-                        <td class="package-name">{{ $package->name }}</td>
-                        <td class="package-price">{{ $package->price }}</td>
-                        <td class="package-duration">{{ $package->duration }}</td>
+
+                        <td>{{ $package->name }}</td>
+
+                        <td>${{ number_format($package->price, 2) }}</td>
+
+                        <td>{{ $package->transaction_limit }}</td>
+
+                        <td>{{ $package->duration }} Days</td>
+
                         <td>
                             <span class="badge {{ $package->status ? 'bg-success' : 'bg-danger' }}">
                                 {{ $package->status ? 'Active' : 'Inactive' }}
                             </span>
                         </td>
+
                         <td>
-                            <button class="btn btn-sm btn-primary editPackageBtn"
-                                    data-id="{{ $package->id }}"
-                                    data-name="{{ $package->name }}"
-                                    data-price="{{ $package->price }}"
-                                    data-duration="{{ $package->duration }}"
-                                    data-status="{{ $package->status }}">
+                            <button
+                                class="btn btn-sm btn-primary editPackageBtn"
+                                data-id="{{ $package->id }}"
+                                data-name="{{ $package->name }}"
+                                data-price="{{ $package->price }}"
+                                data-transaction_limit="{{ $package->transaction_limit }}"
+                                data-duration="{{ $package->duration }}"
+                                data-status="{{ $package->status }}"
+                            >
                                 <i class="fas fa-edit"></i> Edit
                             </button>
-                            <button class="btn btn-sm btn-danger deletePackageBtn" data-id="{{ $package->id }}">
+
+                            <button
+                                class="btn btn-sm btn-danger deletePackageBtn"
+                                data-id="{{ $package->id }}"
+                            >
                                 <i class="fas fa-trash"></i> Delete
                             </button>
                         </td>
                     </tr>
-                @empty
-                    <tr><td colspan="6" class="text-center">No packages found.</td></tr>
-                @endforelse
+                    @empty
+                    <tr>
+                        <td colspan="7" class="text-center">No packages found.</td>
+                    </tr>
+                    @endforelse
                 </tbody>
             </table>
 
@@ -78,8 +95,12 @@
                             <input type="number" id="packagePrice" class="form-control" required>
                         </div>
                         <div class="mb-3">
+                            <label class="form-label">Transaction Limit</label>
+                            <input type="number" id="packageTransactionLimit" class="form-control" min="1" required>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label">Duration</label>
-                            <input type="text" id="packageDuration" class="form-control" required>
+                            <input type="number" id="packageDuration" class="form-control" min="1" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Status</label>
@@ -112,13 +133,18 @@
 
             // 🟢 Open Edit Modal
             $(document).on('click', '.editPackageBtn', function () {
+
                 const btn = $(this);
+
                 $('#packageId').val(btn.data('id'));
                 $('#packageName').val(btn.data('name'));
                 $('#packagePrice').val(btn.data('price'));
+                $('#packageTransactionLimit').val(btn.data('transaction_limit'));
                 $('#packageDuration').val(btn.data('duration'));
                 $('#packageStatus').val(btn.data('status'));
+
                 packageModal.show();
+
             });
 
             // 🟢 Submit Add/Edit
@@ -129,6 +155,7 @@
                     _token: '{{ csrf_token() }}',
                     name: $('#packageName').val(),
                     price: $('#packagePrice').val(),
+                    transaction_limit: $('#packageTransactionLimit').val(),
                     duration: $('#packageDuration').val(),
                     status: $('#packageStatus').val()
                 };

@@ -26,7 +26,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('packages',[PackageController::class,'index']);
     Route::post('buy-packages',[PackageController::class,'store']);
     Route::post('renew',[PackageController::class,'renew']);
-    Route::get('license',[PackageController::class,'license']);
+    Route::get('my-subscription',[PackageController::class,'mySubscription']);
 });
 
 //auth
@@ -34,7 +34,7 @@ Route::post('create-account', [UserAuthController::class, 'createAccount']);
 Route::post('create-login', [UserAuthController::class, 'login']);
 Route::post('login-with-google', [UserAuthController::class, 'loginWithGoogleToken']);
 
-Route::middleware('license.signature')->group(function () {
+Route::middleware('signature')->group(function () {
     //invoice
     Route::post('create_invoice',[InvoiceCreateController::class,'createInvoice']);
     Route::post('payout', [Withdrawal::class, 'payout']);

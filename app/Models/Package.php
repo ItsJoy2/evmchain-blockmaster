@@ -9,9 +9,16 @@ class Package extends Model
     protected $table = 'packages';
 
     protected $fillable = [
+
         'name',
-        'status',
         'price',
+        'transaction_limit',
         'duration',
+        'status'
+
     ];
+    public function users()
+    {
+        return $this->hasMany(UserPackage::class);
+    }
 }

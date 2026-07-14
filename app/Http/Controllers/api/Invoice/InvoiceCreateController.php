@@ -5,6 +5,7 @@ namespace App\Http\Controllers\api\Invoice;
 use App\Http\Controllers\Controller;
 use App\Models\ChainList;
 use App\Models\PaymentJobs;
+use App\Models\UserPackage;
 use App\Services\CreateWallet;
 use Illuminate\Http\Request;
 
@@ -95,62 +96,47 @@ class InvoiceCreateController extends Controller
             'amount'           => 'nullable|numeric|min:0',
         ]);
 
-        $license = $request->attributes->get('license');
+        $merchant = $request->attributes->get('merchant');
 
-        if (!$license) {
+        if (!$merchant) {
             return response()->json([
                 'status' => false,
-                'message' => 'License not found.'
+                'message' => 'Merchant not found.'
             ], 401);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | LICENSE EXPIRY CHECK
-        |--------------------------------------------------------------------------
-        */
+        $package = UserPackage::where('user_id', $merchant->id)
+            ->where('status', true)
+            ->latest()
+            ->first();
 
-        if (!empty($license->expires_at) && now()->greaterThan($license->expires_at)) {
+        if (!$package) {
             return response()->json([
                 'status' => false,
-                'message' => 'License has expired.'
+                'message' => 'No active package found.'
             ], 403);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | DOMAIN CHECK
-        |--------------------------------------------------------------------------
-        */
+        if (now()->greaterThan($package->expires_at)) {
 
-        $webhookHost = parse_url($validated['webhook_url'], PHP_URL_HOST);
+            $package->update([
+                'status' => false
+            ]);
 
-        if (!$webhookHost) {
             return response()->json([
                 'status' => false,
-                'message' => 'Invalid webhook URL.'
-            ], 422);
-        }
-
-        $webhookHost = strtolower(preg_replace('/^www\./', '', $webhookHost));
-        $licensedHost = strtolower(preg_replace('/^www\./', '', $license->domain));
-
-        $isValidDomain =
-            $webhookHost === $licensedHost ||
-            str_ends_with($webhookHost, '.' . $licensedHost);
-
-        if (!$isValidDomain) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Webhook domain is not allowed for this license.'
+                'message' => 'Your package has expired.'
             ], 403);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | TOKEN VALIDATION
-        |--------------------------------------------------------------------------
-        */
+
+        if ($package->used_transactions >= $package->transaction_limit) {
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Transaction limit exceeded.'
+            ], 403);
+        }
 
         if (
             $validated['type'] === 'token' &&
@@ -162,11 +148,6 @@ class InvoiceCreateController extends Controller
             ], 422);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | CHAIN VALIDATION
-        |--------------------------------------------------------------------------
-        */
 
         $chain = ChainList::where('chain_id', $validated['chain_id'])->first();
 
@@ -177,11 +158,6 @@ class InvoiceCreateController extends Controller
             ], 422);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | WALLET GENERATION
-        |--------------------------------------------------------------------------
-        */
 
         $wallet = $this->createWallet->createAddress();
 
@@ -192,35 +168,34 @@ class InvoiceCreateController extends Controller
             ], 500);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | CREATE JOB
-        |--------------------------------------------------------------------------
-        */
 
         $job = PaymentJobs::create([
             'wallet_address'   => $wallet->address,
             'key'              => $wallet->key,
             'webhook_url'      => $validated['webhook_url'],
-            'token_name'       => isset($validated['token_name']) ? strtoupper($validated['token_name']) : null,
+            'token_name'       => !empty($validated['token_name']) ? strtoupper($validated['token_name']) : null,
             'chain_id'         => $chain->chain_id,
             'rpc_url'          => $chain->chain_rpc_url,
             'type'             => $validated['type'],
             'contract_address' => $validated['contract_address'] ?? null,
             'invoice_id'       => PaymentJobs::generateUIDCode(),
-            'user_id'          => $license->user_id,
+            'user_id'          => $merchant->id,
             'amount'           => $validated['amount'] ?? 0,
         ]);
+
+
+        // $package->increment('used_transactions');
+
 
         return response()->json([
             'status' => true,
             'message' => 'Invoice created successfully.',
             'data' => [
-                'invoice_id' => $job->invoice_id,
-                'address'    => $job->wallet_address,
-                'amount'     => $job->amount,
-                'token_name' => $job->token_name,
-                'created_at' => $job->created_at,
+                'invoice_id'          => $job->invoice_id,
+                'address'             => $job->wallet_address,
+                'amount'              => $job->amount,
+                'token_name'          => $job->token_name,
+                'created_at'          => $job->created_at,
             ]
         ], 201);
     }

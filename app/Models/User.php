@@ -18,6 +18,7 @@ class User extends Authenticatable
         'password',
         'last_login_data',
         'wallet_address',
+        'merchant_id',
         'user_secret',
         'two_factor_secret',
         'role',
@@ -43,12 +44,23 @@ class User extends Authenticatable
     {
         static::creating(function ($user) {
 
+            // Generate Merchant ID (8 digits)
+            if (empty($user->merchant_id)) {
+
+                do {
+                    $merchantId = str_pad(random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+                } while (
+                    self::where('merchant_id', $merchantId)->exists()
+                );
+
+                $user->merchant_id = $merchantId;
+            }
+
+            // Generate User Secret (64 chars)
             if (empty($user->user_secret)) {
 
                 do {
-
                     $secret = bin2hex(random_bytes(32));
-
                 } while (
                     self::where('user_secret', $secret)->exists()
                 );
@@ -56,5 +68,10 @@ class User extends Authenticatable
                 $user->user_secret = $secret;
             }
         });
+    }
+    public function package()
+    {
+        return $this->hasOne(UserPackage::class)
+            ->where('status', true);
     }
 }
