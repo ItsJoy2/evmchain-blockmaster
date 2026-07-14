@@ -172,8 +172,11 @@ class PackageController extends Controller
 
     public function store(Request $request)
     {
-        $rpurl = 'https://bsc-dataseed.binance.org/';
-        $contractAddress = '0x55d398326f99059fF775485246999027B3197955';
+        // $rpurl = 'https://bsc-dataseed.binance.org/';
+        // $contractAddress = '0x55d398326f99059fF775485246999027B3197955';
+
+        $rpurl = 'https://rpc-msc.mindchain.info/';
+        // $contractAddress = '0x55d398326f99059fF775485246999027B3197955';
 
         $validate = $request->validate([
             'package_id' => 'required|exists:packages,id',
