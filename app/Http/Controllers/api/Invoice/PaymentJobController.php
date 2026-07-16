@@ -5,6 +5,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PaymentJobs;
 use App\Models\Transactions;
 use App\Models\User;
+use App\Models\UserPackage;
 use App\Services\CheckBalance;
 use App\Services\Crypto;
 use App\Services\NativeCoin;
@@ -73,6 +74,7 @@ class PaymentJobController extends Controller
                         $job->status = 'completed';
                         $job->tx_hash = $res["txHash"];
                         $job->save();
+                        UserPackage::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                         return $data;
                     } else {
                         $job->status = 'pending';
@@ -98,6 +100,7 @@ class PaymentJobController extends Controller
                       $job->status = 'completed';
                       $job->tx_hash = $mainData['txHash'];
                       $job->save();
+                      UserPackage::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                       return  Http::post($job->webhook_url,[
                           'status'     => 'completed',
                           'invoice_id' => $job->invoice_id,
