@@ -78,21 +78,14 @@ class VerifySignature
 
         if (!hash_equals($expectedSignature, $signature)) {
 
-            // return response()->json([
-            //     'status' => false,
-            //     'message' => 'Invalid signature.'
-            //     // Debug
-            //     // 'expected' => $expectedSignature,
-            //     // 'received' => $signature,
-            //     // 'payload' => $payload,
-            // ], 401);
-
             return response()->json([
-                'payload'    => $payload,
-                'timestamp'  => $timestamp,
-                'expected'   => $expectedSignature,
-                'received'   => $signature,
-            ]);
+                'status' => false,
+                'message' => 'Invalid signature.'
+                // Debug
+                // 'expected' => $expectedSignature,
+                // 'received' => $signature,
+                // 'payload' => $payload,
+            ], 401);
         }
 
         $request->attributes->set('merchant', $merchant);
