@@ -34,9 +34,9 @@ Route::post('create-account', [UserAuthController::class, 'createAccount']);
 Route::post('create-login', [UserAuthController::class, 'login']);
 Route::post('login-with-google', [UserAuthController::class, 'loginWithGoogleToken']);
 
-Route::middleware('signature')->group(function () {
+Route::prefix('v1')->middleware('signature')->group(function () {
     //invoice
-    Route::post('create_invoice',[InvoiceCreateController::class,'createInvoice']);
+    Route::post('create-invoice',[InvoiceCreateController::class,'createInvoice']);
     Route::post('payout', [Withdrawal::class, 'payout']);
     // Route::post('deposit', [Deposit::class, 'deposit']);
     // Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
