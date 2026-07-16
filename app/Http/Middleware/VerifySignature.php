@@ -79,12 +79,11 @@ class VerifySignature
 if (!hash_equals($expectedSignature, $signature)) {
 
 return response()->json([
-    'status'    => false,
-    'expected'  => $expectedSignature,
-    'received'  => $signature,
-    'payload'   => $payload,
-    'json'      => json_encode($payload, JSON_UNESCAPED_SLASHES),
-], 401);
+    'is_json' => $request->isJson(),
+    'content_type' => $request->header('Content-Type'),
+    'raw' => $request->getContent(),
+    'all' => $request->all(),
+]);
 }
 
         $request->attributes->set('merchant', $merchant);
