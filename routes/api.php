@@ -38,15 +38,15 @@ Route::prefix('v1')->middleware('signature')->group(function () {
     //invoice
     Route::post('create-invoice',[InvoiceCreateController::class,'createInvoice']);
     Route::post('payout', [Withdrawal::class, 'payout']);
-    // Route::post('deposit', [Deposit::class, 'deposit']);
-    // Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
+    Route::post('deposit', [Deposit::class, 'deposit']);
+    Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
     Route::get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
     Route::get('invoice/{invoice_id}', [PaymentJobController::class, 'invoiceData']);
     Route::get('test', [PaymentJobController::class, 'allBalance']);
     // Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
 });
 
-    Route::post('deposit', [Deposit::class, 'deposit']);
-    Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
+    // Route::post('deposit', [Deposit::class, 'deposit']);
+    // Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
     Route::get('last-transactions', [PaymentJobController::class, 'Jobs']);
      Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
