@@ -51,7 +51,7 @@ class VerifySignature
         // Build payload
         if ($request->isMethod('GET')) {
             $payload = array_merge(
-                // $request->route()->parameters(),
+                $request->route()->parameters(),
                 $request->query()
             );
         } elseif ($request->isJson()) {
