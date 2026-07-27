@@ -42,7 +42,6 @@ Route::prefix('v1')->middleware('signature')->group(function () {
     Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
     Route::get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
     Route::get('invoice/{invoice_id}', [PaymentJobController::class, 'invoiceData']);
-    Route::get('test', [PaymentJobController::class, 'allBalance']);
     // Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
 });
 
@@ -50,3 +49,4 @@ Route::prefix('v1')->middleware('signature')->group(function () {
     // Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
     Route::get('last-transactions', [PaymentJobController::class, 'Jobs']);
      Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
+    Route::get('test', [PaymentJobController::class, 'allBalance']);
