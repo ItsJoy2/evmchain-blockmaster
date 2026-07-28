@@ -26,6 +26,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('packages',[PackageController::class,'index']);
     Route::post('buy-packages',[PackageController::class,'store']);
     Route::post('renew',[PackageController::class,'renew']);
+    Route::post('add/domain', [PackageController::class, 'addDomain']);
     Route::get('my-subscription',[PackageController::class,'mySubscription']);
 });
 

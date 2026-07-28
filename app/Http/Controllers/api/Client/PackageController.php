@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\api\Client;
 
 use App\Http\Controllers\Controller;
-use App\Models\DomainLicense;
+use App\Models\MerchantDomain;
+use App\Models\MerchantSubscription;
 use App\Models\Package;
 use App\Models\Transactions;
-use App\Models\UserPackage;
 use App\Services\CheckBalance;
 use App\Services\TokenManage;
 use Carbon\Carbon;
@@ -177,6 +177,7 @@ class PackageController extends Controller
 
         $validate = $request->validate([
             'package_id' => 'required|exists:packages,id',
+            'domain' => 'required|string|max:255',
         ]);
 
         $package = Package::findOrFail($validate['package_id']);
@@ -218,32 +219,56 @@ class PackageController extends Controller
                 ]);
             }
 
-            $userPackage = UserPackage::where('user_id', $user->id)->where('status', true)->first();
+        $subscription = MerchantSubscription::where('user_id', $user->id)->where('status', true)->first();
 
-            if ($userPackage) {
+        if ($subscription) {
 
-                $userPackage->update([
-                    'package_id' => $package->id,
-                    'transaction_limit' => $package->transaction_limit,
-                    'used_transactions' => 0,
-                    'started_at' => now(),
-                    'expires_at' => now()->addDays($package->duration),
-                    'status' => true,
-                ]);
+            $subscription->update([
+                'package_id'                     => $package->id,
+                'transaction_limit'             => $package->transaction_limit,
+                'used_transactions'             => 0,
+                'decentralized_wallet_limit'    => $package->decentralized_wallet_limit,
+                'used_decentralized_wallets'    => 0,
+                'domain_limit'                  => $package->domain_limit,
+                'started_at'                    => now(),
+                'expires_at'                    => now()->addDays($package->duration),
+                'status'                        => true,
+            ]);
 
-            } else {
+            MerchantDomain::where('merchant_subscription_id', $subscription->id)->delete();
 
-                UserPackage::create([
-                    'user_id' => $user->id,
-                    'package_id' => $package->id,
-                    'transaction_limit' => $package->transaction_limit,
-                    'used_transactions' => 0,
-                    'started_at' => now(),
-                    'expires_at' => now()->addDays($package->duration),
-                    'status' => true,
-                ]);
+            MerchantDomain::create([
+                'user_id' => $user->id,
+                'merchant_subscription_id' => $subscription->id,
+                'domain' => strtolower(trim($validate['domain'])),
+            ]);
 
-            }
+            $subscription->update([
+                'used_domains' => 1,
+            ]);
+
+        } else {
+
+            $subscription = MerchantSubscription::create([
+                'user_id'                       => $user->id,
+                'package_id'                    => $package->id,
+                'transaction_limit'             => $package->transaction_limit,
+                'used_transactions'             => 0,
+                'decentralized_wallet_limit'    => $package->decentralized_wallet_limit,
+                'used_decentralized_wallets'    => 0,
+                'domain_limit'                  => $package->domain_limit,
+                'used_domains'                  => 1,
+                'started_at'                    => now(),
+                'expires_at'                    => now()->addDays($package->duration),
+                'status'                        => true,
+            ]);
+
+            MerchantDomain::create([
+                'user_id' => $user->id,
+                'merchant_subscription_id' => $subscription->id,
+                'domain' => strtolower(trim($validate['domain'])),
+            ]);
+        }
 
             Transactions::create([
                 'user_id'    => $user->id,
@@ -282,11 +307,11 @@ class PackageController extends Controller
 
         $package = Package::findOrFail($validate['package_id']);
 
-        $userPackage = UserPackage::where('user_id', $user->id)
+        $subscription = MerchantSubscription::where('user_id', $user->id)
             ->where('status', true)
             ->first();
 
-        if (!$userPackage) {
+        if (!$subscription) {
             return response()->json([
                 'status' => false,
                 'message' => 'No active package found.'
@@ -328,20 +353,28 @@ class PackageController extends Controller
                 ]);
             }
 
-            $expiresAt = $userPackage->expires_at
-                ? Carbon::parse($userPackage->expires_at)
+            $expiresAt = $subscription->expires_at
+                ? Carbon::parse($subscription->expires_at)
                 : now();
 
             if ($expiresAt->isPast()) {
                 $expiresAt = now();
             }
 
-            $userPackage->update([
-                'package_id' => $package->id,
-                'transaction_limit' => $package->transaction_limit,
-                'used_transactions' => 0,
-                'expires_at' => $expiresAt->copy()->addDays($package->duration),
-                'status' => true,
+            $subscription->update([
+                'package_id'                  => $package->id,
+                'transaction_limit'           => $package->transaction_limit,
+                'used_transactions'           => 0,
+                'decentralized_wallet_limit'  => $package->decentralized_wallet_limit,
+                'used_decentralized_wallets'  => 0,
+                'domain_limit'                => $package->domain_limit,
+                'expires_at'                  => $expiresAt->copy()->addDays($package->duration),
+                'status'                      => true,
+                'n5'                          => false,
+                'n3'                          => false,
+                'nexp'                        => false,
+                'ntx'                         => false,
+                'nwl'                         => false,
             ]);
 
             Transactions::create([
@@ -368,13 +401,68 @@ class PackageController extends Controller
 
         }
     }
-    public function mySubscription(Request $request)
+
+    public function addDomain(Request $request)
     {
-        $package = UserPackage::with('package')->where('user_id', $request->user()->id)->where('status', true)->first();
+        $validate = $request->validate([
+            'domain' => 'required|string|max:255'
+        ]);
+
+        $user = $request->user();
+
+        $subscription = MerchantSubscription::where('user_id', $user->id)
+            ->where('status', true)
+            ->first();
+
+        if (!$subscription) {
+            return response()->json([
+                'status' => false,
+                'message' => 'No active subscription found.'
+            ], 404);
+        }
+
+        if ($subscription->used_domains >= $subscription->domain_limit) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Domain limit exceeded.'
+            ], 422);
+        }
+
+        $domain = strtolower(trim($validate['domain']));
+        $domain = preg_replace('#^https?://#i', '', $domain);
+        $domain = rtrim($domain, '/');
+
+        if (MerchantDomain::where('domain', $domain)->exists()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This domain is already registered.'
+            ], 422);
+        }
+
+        MerchantDomain::create([
+            'user_id' => $user->id,
+            'merchant_subscription_id' => $subscription->id,
+            'domain' => $domain,
+        ]);
+
+        $subscription->increment('used_domains');
 
         return response()->json([
             'status' => true,
-            'data' => $package
+            'message' => 'Domain added successfully.'
+        ]);
+    }
+    public function mySubscription(Request $request)
+    {
+        $subscription = MerchantSubscription::with([
+            'package:id,name',
+            'domains:id,merchant_subscription_id,domain,is_verified,verified_at'
+        ])
+        ->where('user_id', $request->user()->id)->first();
+
+        return response()->json([
+            'status' => true,
+            'data' => $subscription
         ]);
     }
 }

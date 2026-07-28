@@ -12,6 +12,8 @@ class Package extends Model
         'name',
         'price',
         'transaction_limit',
+        'decentralized_wallet_limit',
+        'domain_limit',
         'duration',
         'status',
     ];
@@ -19,12 +21,14 @@ class Package extends Model
     protected $casts = [
         'price' => 'float',
         'transaction_limit' => 'integer',
+        'decentralized_wallet_limit' => 'integer',
+        'domain_limit' => 'integer',
         'duration' => 'integer',
         'status' => 'boolean',
     ];
 
     public function users()
     {
-        return $this->hasMany(UserPackage::class);
+        return $this->hasMany(MerchantSubscription::class);
     }
 }
