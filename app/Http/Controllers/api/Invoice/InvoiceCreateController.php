@@ -7,7 +7,6 @@ use App\Models\ChainList;
 use App\Models\MerchantDomain;
 use App\Models\MerchantSubscription;
 use App\Models\PaymentJobs;
-use App\Models\UserPackage;
 use App\Notifications\MerchantSubscriptionNotification;
 use App\Services\CreateWallet;
 use Illuminate\Http\Request;
