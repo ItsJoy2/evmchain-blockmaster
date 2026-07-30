@@ -41,7 +41,7 @@ Route::prefix('v1')->middleware('signature')->group(function () {
     Route::post('payout', [Withdrawal::class, 'payout']);
     Route::post('deposit', [Deposit::class, 'deposit']);
     Route::post('create-wallet', [CreateWallet::class, 'createAddress']);
-    Route::get('payments/{id}', [PaymentJobController::class, 'checkNewPayments']);
+    Route::get('payments/{txHash}', [PaymentJobController::class, 'checkNewPayments']);
     Route::get('invoice/{invoice_id}', [PaymentJobController::class, 'invoiceData']);
     // Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
 });

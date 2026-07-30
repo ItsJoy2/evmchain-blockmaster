@@ -4,8 +4,11 @@ namespace App\Http\Controllers\api\Invoice;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChainList;
+use App\Models\MerchantDomain;
+use App\Models\MerchantSubscription;
 use App\Models\PaymentJobs;
 use App\Models\UserPackage;
+use App\Notifications\MerchantSubscriptionNotification;
 use App\Services\CreateWallet;
 use Illuminate\Http\Request;
 
@@ -105,10 +108,7 @@ class InvoiceCreateController extends Controller
             ], 401);
         }
 
-        $package = UserPackage::where('user_id', $merchant->id)
-            ->where('status', true)
-            ->latest()
-            ->first();
+        $package = MerchantSubscription::where('user_id', $merchant->id)->where('status', true)->latest()->first();
 
         if (!$package) {
             return response()->json([
@@ -129,6 +129,40 @@ class InvoiceCreateController extends Controller
             ], 403);
         }
 
+        $host = strtolower(parse_url($validated['webhook_url'], PHP_URL_HOST));
+
+        if (!$host) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid webhook URL.'
+            ], 422);
+        }
+
+        $registered = MerchantDomain::where('user_id', $merchant->id)->where('is_verified', true)->get();
+
+        $allowed = false;
+
+        foreach ($registered as $domain) {
+
+            $mainDomain = strtolower($domain->domain);
+
+            if (
+                $host === $mainDomain ||
+                str_ends_with($host, '.' . $mainDomain)
+            ) {
+                $allowed = true;
+                break;
+            }
+        }
+
+        if (!$allowed) {
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Webhook domain is not registered or verified.'
+            ], 403);
+
+        }
 
         if ($package->used_transactions >= $package->transaction_limit) {
 
@@ -184,7 +218,29 @@ class InvoiceCreateController extends Controller
         ]);
 
 
-        // $package->increment('used_transactions');
+        $package->increment('used_transactions');
+
+        $package->refresh();
+
+        if (
+            !$package->ntx &&
+            $package->used_transactions >= $package->transaction_limit
+        ) {
+
+            $merchant->notify(
+                new MerchantSubscriptionNotification(
+                    'transaction_limit',
+                    [
+                        'used' => $package->used_transactions,
+                        'limit' => $package->transaction_limit,
+                    ]
+                )
+            );
+
+            $package->update([
+                'ntx' => true,
+            ]);
+        }
 
 
         return response()->json([

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\api\Invoice;
 use App\Http\Controllers\Controller;
+use App\Models\MerchantSubscription;
 use App\Models\PaymentJobs;
 use App\Models\Transactions;
 use App\Models\User;
@@ -66,15 +67,12 @@ class PaymentJobController extends Controller
 
                     if (!empty($res['status']) && !empty($res['txHash'])) {
                       $data =  Http::post($job->webhook_url, [
-                            'status'     => true,
-                            'invoice_id' => $job->invoice_id,
-                            'amount' => $res['amount'],
                             'txHash'    => $res["txHash"],
                         ]);
                         $job->status = 'completed';
                         $job->tx_hash = $res["txHash"];
                         $job->save();
-                        UserPackage::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
+                        MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                         return $data;
                     } else {
                         $job->status = 'pending';
@@ -100,11 +98,8 @@ class PaymentJobController extends Controller
                       $job->status = 'completed';
                       $job->tx_hash = $mainData['txHash'];
                       $job->save();
-                      UserPackage::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
+                      MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                       return  Http::post($job->webhook_url,[
-                          'status'     => 'completed',
-                          'invoice_id' => $job->invoice_id,
-                          'amount'     => $mainData['amount'],
                           'txHash'     => $mainData['txHash'],
                       ]);
                   }else{
@@ -143,54 +138,81 @@ class PaymentJobController extends Controller
         ]);
     }
 
-    public function checkNewPayments($id)
+    // public function checkNewPayments($id)
+    // {
+    //     if (!$id) {
+    //         return response()->json([
+    //             'status' => false,
+    //             'message' => 'Invoice ID is required.',
+    //         ]);
+    //     }
+
+    //     $rpc = PaymentJobs::where('invoice_id', $id)->first();
+
+    //     if (!$rpc) {
+    //         return response()->json([
+    //             'status' => false,
+    //             'message' => 'Invoice not found.',
+    //         ]);
+    //     }
+
+    //     $balance = $this->checkBalance->balance($rpc->rpc_url, $rpc->wallet_address,$rpc->type,$rpc->contract_address);
+    //     if ($balance > 0.0) {
+    //         dispatch(function () {
+    //             $this->Jobs();
+    //         });
+    //         try {
+    //             Http::post($rpc->webhook_url,[
+    //                 'status'     => 'completed',
+    //                 'invoice_id' => $rpc->invoice_id,
+    //                 'amount'     => $balance,
+    //                 'txHash'     => 'check-in-scan',
+    //             ]);
+    //         }catch (\Exception $e){}
+    //         return response()->json([
+    //             'status' => false,
+    //             'payment_status' => 'completed',
+    //             'message' => 'New transaction detected!',
+    //             'balance' => $balance,
+    //         ]);
+    //     }
+
+    //     return response()->json([
+    //         'status' => false,
+    //         'payment_status' => $rpc->status,
+    //         'message' => 'No new transaction found.',
+    //         'balance' => $balance,
+    //     ]);
+    // }
+
+
+
+    public function checkNewPayments($txHash)
     {
-        if (!$id) {
+        if (!$txHash) {
             return response()->json([
                 'status' => false,
-                'message' => 'Invoice ID is required.',
+                'message' => 'Transaction hash is required.',
             ]);
         }
 
-        $rpc = PaymentJobs::where('invoice_id', $id)->first();
+        $payment = PaymentJobs::where('tx_hash', $txHash)->first();
 
-        if (!$rpc) {
+        if (!$payment) {
             return response()->json([
                 'status' => false,
-                'message' => 'Invoice not found.',
-            ]);
-        }
-
-        $balance = $this->checkBalance->balance($rpc->rpc_url, $rpc->wallet_address,$rpc->type,$rpc->contract_address);
-        if ($balance > 0.0) {
-            dispatch(function () {
-                $this->Jobs();
-            });
-            try {
-                Http::post($rpc->webhook_url,[
-                    'status'     => 'completed',
-                    'invoice_id' => $rpc->invoice_id,
-                    'amount'     => $balance,
-                    'txHash'     => 'check-in-scan',
-                ]);
-            }catch (\Exception $e){}
-            return response()->json([
-                'status' => false,
-                'payment_status' => 'completed',
-                'message' => 'New transaction detected!',
-                'balance' => $balance,
+                'message' => 'Transaction not found.',
             ]);
         }
 
         return response()->json([
-            'status' => false,
-            'payment_status' => $rpc->status,
-            'message' => 'No new transaction found.',
-            'balance' => $balance,
+            'status' => true,
+            'invoice_id' => $payment->invoice_id,
+            'payment_status' => $payment->status,
+            'amount' => $payment->amount,
+            'token' => $payment->token_name,
         ]);
     }
-
-
     public function invoiceData($invoice_id)
     {$invoice = PaymentJobs::where('invoice_id', $invoice_id)->select('status','token_name','wallet_address','amount','created_at')->first();
         if (!$invoice) {
