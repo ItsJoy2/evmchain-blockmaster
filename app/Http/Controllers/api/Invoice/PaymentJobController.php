@@ -73,7 +73,7 @@ class PaymentJobController extends Controller
                         ]);
                         $job->status = 'completed';
                         $job->tx_hash = $res["txHash"];
-                        $job->amount = $res["amount"];
+                        $job->received_amount = $res["amount"];
                         $job->save();
                         MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                         return $data;
@@ -100,7 +100,7 @@ class PaymentJobController extends Controller
                   if ($mainData['status'] === true) {
                       $job->status = 'completed';
                       $job->tx_hash = $mainData['txHash'];
-                      $job->amount = $mainData['amount'];
+                      $job->received_amount = $mainData['amount'];
                       $job->save();
                       MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                       return  Http::post($job->webhook_url,[
@@ -222,12 +222,12 @@ class PaymentJobController extends Controller
             'status' => true,
             'invoice_id' => $payment->invoice_id,
             'payment_status' => $payment->status,
-            'amount' => $payment->amount,
+            'amount' => $payment->received_amount,
             'token' => $payment->token_name,
         ]);
     }
     public function invoiceData($invoice_id)
-    {$invoice = PaymentJobs::where('invoice_id', $invoice_id)->select('status','token_name','wallet_address','amount','created_at')->first();
+    {$invoice = PaymentJobs::where('invoice_id', $invoice_id)->select('status','token_name','wallet_address','received_amount','created_at')->first();
         if (!$invoice) {
             return response()->json([
                 'status' => false,

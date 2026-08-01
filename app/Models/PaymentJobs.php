@@ -23,6 +23,7 @@ class PaymentJobs extends Model
         'invoice_id',
         'user_id',
         'amount',
+        'received_amount',
     ];
 
     public static function generateUIDCode(): string
