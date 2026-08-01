@@ -52,4 +52,4 @@ Route::prefix('v1')->middleware('signature')->group(function () {
      Route::get('check-balance',[ClientWalletBalanceController::class,'BalanceCheck']);
     Route::get('test', [PaymentJobController::class, 'allBalance']);
 
-    Route::get('payments/{txHash}', [PaymentJobController::class, 'checkNewPayments']);
+    // Route::get('payments/{txHash}', [PaymentJobController::class, 'checkNewPayments']);
