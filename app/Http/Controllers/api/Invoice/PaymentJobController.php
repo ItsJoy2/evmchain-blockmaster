@@ -144,52 +144,52 @@ class PaymentJobController extends Controller
         ]);
     }
 
-    // public function checkNewPayments($id)
-    // {
-    //     if (!$id) {
-    //         return response()->json([
-    //             'status' => false,
-    //             'message' => 'Invoice ID is required.',
-    //         ]);
-    //     }
+    public function checkNewPayment($id)
+    {
+        if (!$id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invoice ID is required.',
+            ]);
+        }
 
-    //     $rpc = PaymentJobs::where('invoice_id', $id)->first();
+        $rpc = PaymentJobs::where('invoice_id', $id)->first();
 
-    //     if (!$rpc) {
-    //         return response()->json([
-    //             'status' => false,
-    //             'message' => 'Invoice not found.',
-    //         ]);
-    //     }
+        if (!$rpc) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invoice not found.',
+            ]);
+        }
 
-    //     $balance = $this->checkBalance->balance($rpc->rpc_url, $rpc->wallet_address,$rpc->type,$rpc->contract_address);
-    //     if ($balance > 0.0) {
-    //         dispatch(function () {
-    //             $this->Jobs();
-    //         });
-    //         try {
-    //             Http::post($rpc->webhook_url,[
-    //                 'status'     => 'completed',
-    //                 'invoice_id' => $rpc->invoice_id,
-    //                 'amount'     => $balance,
-    //                 'txHash'     => 'check-in-scan',
-    //             ]);
-    //         }catch (\Exception $e){}
-    //         return response()->json([
-    //             'status' => false,
-    //             'payment_status' => 'completed',
-    //             'message' => 'New transaction detected!',
-    //             'balance' => $balance,
-    //         ]);
-    //     }
+        $balance = $this->checkBalance->balance($rpc->rpc_url, $rpc->wallet_address,$rpc->type,$rpc->contract_address);
+        if ($balance > 0.0) {
+            dispatch(function () {
+                $this->Jobs();
+            });
+            try {
+                Http::post($rpc->webhook_url,[
+                    'status'     => 'completed',
+                    'invoice_id' => $rpc->invoice_id,
+                    'amount'     => $balance,
+                    'txHash'     => 'check-in-scan',
+                ]);
+            }catch (\Exception $e){}
+            return response()->json([
+                'status' => false,
+                'payment_status' => 'completed',
+                'message' => 'New transaction detected!',
+                'balance' => $balance,
+            ]);
+        }
 
-    //     return response()->json([
-    //         'status' => false,
-    //         'payment_status' => $rpc->status,
-    //         'message' => 'No new transaction found.',
-    //         'balance' => $balance,
-    //     ]);
-    // }
+        return response()->json([
+            'status' => false,
+            'payment_status' => $rpc->status,
+            'message' => 'No new transaction found.',
+            'balance' => $balance,
+        ]);
+    }
 
 
 
