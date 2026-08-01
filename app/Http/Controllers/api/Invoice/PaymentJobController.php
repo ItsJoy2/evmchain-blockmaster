@@ -222,7 +222,7 @@ class PaymentJobController extends Controller
             'status' => true,
             'invoice_id' => $payment->invoice_id,
             'payment_status' => $payment->status,
-            'amount' => $$payment->amount,
+            'amount' => $payment->amount,
             'token' => $payment->token_name,
         ]);
     }
