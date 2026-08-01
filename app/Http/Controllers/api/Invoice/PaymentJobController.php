@@ -68,6 +68,7 @@ class PaymentJobController extends Controller
 
                     if (!empty($res['status']) && !empty($res['txHash'])) {
                       $data =  Http::post($job->webhook_url, [
+                            'invoice_id' => $job->invoice_id,
                             'txHash'    => $res["txHash"],
                         ]);
                         $job->status = 'completed';
@@ -102,6 +103,7 @@ class PaymentJobController extends Controller
                       MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
                       return  Http::post($job->webhook_url,[
                           'txHash'     => $mainData['txHash'],
+                          'invoice_id' => $job->invoice_id,
                       ]);
                   }else{
                       $job->status = 'pending';
