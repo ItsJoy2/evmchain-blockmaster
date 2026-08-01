@@ -28,326 +28,105 @@ class PaymentJobController extends Controller
         $this->checkBalance = new CheckBalance();
     }
 
-    // public function Jobs()
-    // {
-
-    //     $jobs = PaymentJobs::where('status', 'pending')
-    //         ->orderBy('created_at', 'asc')
-    //         ->limit(5)
-    //         ->get();
-
-    //     if ($jobs->isEmpty()) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'No pending jobs found.',
-    //         ]);
-    //     }
-
-    //     foreach ($jobs as $job) {
-    //         try {
-    //             if ($job->created_at->lt(now()->subMinutes(100))) {
-    //                 $this->expireJob($job);
-    //                 continue;
-    //             }
-    //             $job->status = 'processing';
-    //             $job->save();
-    //             $walletAddress = $job->wallet_address;
-    //             $walletKey     = $this->crypto->decrypt($job->key);
-    //             $user = User::where('id', $job->user_id)->first();
-
-    //             if ($job->type === 'native') {
-    //                 Cache::forget('balance_list_' . $user->id);
-    //                 $res = $this->nativeCoin->sendAnyChainNativeBalance(
-    //                     "$walletAddress",
-    //                     $user->wallet_address,
-    //                     $walletKey,
-    //                     $job->rpc_url,
-    //                     $job->chain_id,
-    //                     true,
-    //                 );
-
-    //                 if (!empty($res['status']) && !empty($res['txHash'])) {
-    //                   $data =  Http::post($job->webhook_url, [
-    //                         'txHash'    => $res["txHash"],
-    //                     ]);
-    //                     $job->status = 'completed';
-    //                     $job->tx_hash = $res["txHash"];
-    //                     $job->save();
-    //                     MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
-    //                     return $data;
-    //                 } else {
-    //                     $job->status = 'pending';
-    //                     $job->save();
-    //                     continue;
-    //                 }
-    //             }elseif ($job->type == 'token') {
-    //                 Cache::forget('balance_list_' . $user->id);
-    //               $data = $this->tokenManage->sendAnyChainTokenTransaction(
-    //                   "$walletAddress",
-    //                   $job->contract_address,
-    //                   $user->wallet_address,
-    //                   "$walletKey",
-    //                   "$job->rpc_url",
-    //                   "$job->chain_id",
-    //                   "$user->wallet_address",
-    //                   $this->crypto->decrypt($user->two_factor_secret),
-    //                   null,
-    //                   true
-    //               );
-    //               $mainData = $data;
-    //               if ($mainData['status'] === true) {
-    //                   $job->tx_hash = $mainData['txHash'];
-    //                   $job->save();
-    //                   MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
-    //                   return  Http::post($job->webhook_url,[
-    //                       'txHash'     => $mainData['txHash'],
-    //                   ]);
-    //               }else{
-    //                   $job->status = 'pending';
-    //                   $job->save();
-    //                   continue;
-    //               }
-
-    //             }
-
-    //         } catch (\Throwable $e) {
-    //             $job->status = 'pending';
-    //             $job->save();
-    //             echo $e->getMessage();
-    //             continue;
-    //         }
-    //     }
-
-    //     return response()->json([
-    //         'success' => true,
-    //         'message' => 'Job processing completed.',
-    //     ]);
-    // }
-
-
-
     public function Jobs()
-{
-    $jobs = PaymentJobs::where('status', 'pending')
-        ->orderBy('created_at', 'asc')
-        ->limit(5)
-        ->get();
+    {
 
-    if ($jobs->isEmpty()) {
+        $jobs = PaymentJobs::where('status', 'pending')
+            ->orderBy('created_at', 'asc')
+            ->limit(5)
+            ->get();
 
-        Log::info('Payment Worker: No pending jobs found.');
+        if ($jobs->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No pending jobs found.',
+            ]);
+        }
+
+        foreach ($jobs as $job) {
+            try {
+                if ($job->created_at->lt(now()->subMinutes(100))) {
+                    $this->expireJob($job);
+                    continue;
+                }
+                $job->status = 'processing';
+                $job->save();
+                $walletAddress = $job->wallet_address;
+                $walletKey     = $this->crypto->decrypt($job->key);
+                $user = User::where('id', $job->user_id)->first();
+
+                if ($job->type === 'native') {
+                    Cache::forget('balance_list_' . $user->id);
+                    $res = $this->nativeCoin->sendAnyChainNativeBalance(
+                        "$walletAddress",
+                        $user->wallet_address,
+                        $walletKey,
+                        $job->rpc_url,
+                        $job->chain_id,
+                        true,
+                    );
+
+                    if (!empty($res['status']) && !empty($res['txHash'])) {
+                      $data =  Http::post($job->webhook_url, [
+                            'txHash'    => $res["txHash"],
+                        ]);
+                        $job->status = 'completed';
+                        $job->tx_hash = $res["txHash"];
+                        $job->save();
+                        MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
+                        return $data;
+                    } else {
+                        $job->status = 'pending';
+                        $job->save();
+                        continue;
+                    }
+                }elseif ($job->type == 'token') {
+                    Cache::forget('balance_list_' . $user->id);
+                  $data = $this->tokenManage->sendAnyChainTokenTransaction(
+                      "$walletAddress",
+                      $job->contract_address,
+                      $user->wallet_address,
+                      "$walletKey",
+                      "$job->rpc_url",
+                      "$job->chain_id",
+                      "$user->wallet_address",
+                      $this->crypto->decrypt($user->two_factor_secret),
+                      null,
+                      true
+                  );
+                  $mainData = $data;
+                  if ($mainData['status'] === true) {
+                      $job->status = 'completed';
+                      $job->tx_hash = $mainData['txHash'];
+                      $job->save();
+                      MerchantSubscription::where('user_id', $job->user_id)->where('status', true)->increment('used_transactions');
+                      return  Http::post($job->webhook_url,[
+                          'txHash'     => $mainData['txHash'],
+                      ]);
+                  }else{
+                      $job->status = 'pending';
+                      $job->save();
+                      continue;
+                  }
+
+                }
+
+            } catch (\Throwable $e) {
+                $job->status = 'pending';
+                $job->save();
+                echo $e->getMessage();
+                continue;
+            }
+        }
 
         return response()->json([
-            'success' => false,
-            'message' => 'No pending jobs found.',
+            'success' => true,
+            'message' => 'Job processing completed.',
         ]);
     }
 
-    foreach ($jobs as $job) {
 
-        try {
 
-            Log::info('Processing Payment Job', [
-                'job_id' => $job->id,
-                'invoice_id' => $job->invoice_id,
-                'type' => $job->type,
-                'status' => $job->status,
-            ]);
-
-            if ($job->created_at->lt(now()->subMinutes(100))) {
-
-                Log::warning('Payment Job Expired', [
-                    'job_id' => $job->id,
-                    'invoice_id' => $job->invoice_id,
-                ]);
-
-                $this->expireJob($job);
-                continue;
-            }
-
-            $job->update([
-                'status' => 'processing'
-            ]);
-
-            $walletAddress = $job->wallet_address;
-            $walletKey = $this->crypto->decrypt($job->key);
-
-            $user = User::find($job->user_id);
-
-            if (!$user) {
-
-                Log::error('Merchant not found.', [
-                    'job_id' => $job->id,
-                    'user_id' => $job->user_id,
-                ]);
-
-                $job->update([
-                    'status' => 'pending'
-                ]);
-
-                continue;
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Native Coin
-            |--------------------------------------------------------------------------
-            */
-
-            if ($job->type === 'native') {
-
-                Cache::forget('balance_list_' . $user->id);
-
-                $res = $this->nativeCoin->sendAnyChainNativeBalance(
-                    $walletAddress,
-                    $user->wallet_address,
-                    $walletKey,
-                    $job->rpc_url,
-                    $job->chain_id,
-                    true
-                );
-
-                Log::info('Native Transfer Response', $res);
-
-                if (!empty($res['status']) && !empty($res['txHash'])) {
-
-                    $job->update([
-                        'status' => 'completed',
-                        'tx_hash' => $res['txHash'],
-                    ]);
-
-                    MerchantSubscription::where('user_id', $job->user_id)
-                        ->where('status', true)
-                        ->increment('used_transactions');
-
-                    Log::info('Sending Webhook', [
-                        'url' => $job->webhook_url,
-                        'payload' => [
-                            'txHash' => $res['txHash'],
-                        ]
-                    ]);
-
-                    $response = Http::acceptJson()
-                        ->asJson()
-                        ->post($job->webhook_url, [
-                            'txHash' => $res['txHash'],
-                        ]);
-
-                    Log::info('Webhook Response', [
-                        'status' => $response->status(),
-                        'successful' => $response->successful(),
-                        'body' => $response->body(),
-                    ]);
-
-                    continue;
-                }
-
-                Log::warning('Native Transfer Failed', [
-                    'job_id' => $job->id,
-                    'response' => $res,
-                ]);
-
-                $job->update([
-                    'status' => 'pending'
-                ]);
-
-                continue;
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Token
-            |--------------------------------------------------------------------------
-            */
-
-            if ($job->type === 'token') {
-
-                Cache::forget('balance_list_' . $user->id);
-
-                $mainData = $this->tokenManage->sendAnyChainTokenTransaction(
-                    $walletAddress,
-                    $job->contract_address,
-                    $user->wallet_address,
-                    $walletKey,
-                    $job->rpc_url,
-                    $job->chain_id,
-                    $user->wallet_address,
-                    $this->crypto->decrypt($user->two_factor_secret),
-                    null,
-                    true
-                );
-
-                Log::info('Token Transfer Response', $mainData);
-
-                if (!empty($mainData['status']) && !empty($mainData['txHash'])) {
-
-                    $job->update([
-                        'status' => 'completed',
-                        'tx_hash' => $mainData['txHash'],
-                    ]);
-
-                    MerchantSubscription::where('user_id', $job->user_id)
-                        ->where('status', true)
-                        ->increment('used_transactions');
-
-                    Log::info('Sending Webhook', [
-                        'url' => $job->webhook_url,
-                        'payload' => [
-                            'txHash' => $mainData['txHash'],
-                        ]
-                    ]);
-
-                    $response = Http::acceptJson()
-                        ->asJson()
-                        ->post($job->webhook_url, [
-                            'txHash' => $mainData['txHash'],
-                        ]);
-
-                    Log::info('Webhook Response', [
-                        'status' => $response->status(),
-                        'successful' => $response->successful(),
-                        'body' => $response->body(),
-                    ]);
-
-                    continue;
-                }
-
-                Log::warning('Token Transfer Failed', [
-                    'job_id' => $job->id,
-                    'response' => $mainData,
-                ]);
-
-                $job->update([
-                    'status' => 'pending'
-                ]);
-
-            }
-
-        } catch (\Throwable $e) {
-
-            Log::error('Payment Worker Exception', [
-                'job_id' => $job->id ?? null,
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            $job->update([
-                'status' => 'pending'
-            ]);
-
-            continue;
-        }
-    }
-
-    Log::info('Payment Worker Completed');
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Job processing completed.',
-    ]);
-}
     protected function expireJob(PaymentJobs $job): void
     {
         $job->status = 'expired';
