@@ -209,11 +209,18 @@ class PaymentJobController extends Controller
             ]);
         }
 
+        $balance = $this->checkBalance->balance(
+            $payment->rpc_url,
+            $payment->wallet_address,
+            $payment->type,
+            $payment->contract_address
+        );
+
         return response()->json([
             'status' => true,
             'invoice_id' => $payment->invoice_id,
             'payment_status' => $payment->status,
-            'amount' => $payment->amount,
+            'amount' => $balance,
             'token' => $payment->token_name,
         ]);
     }
