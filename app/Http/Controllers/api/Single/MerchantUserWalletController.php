@@ -7,6 +7,7 @@ use App\Models\MerchantUserWallet;
 use App\Models\User;
 use App\Services\CreateWallet;
 use Illuminate\Http\Request;
+use App\Jobs\ProcessDeposit;
 use Throwable;
 
 class MerchantUserWalletController extends Controller
@@ -73,7 +74,7 @@ class MerchantUserWalletController extends Controller
             ]);
 
             ProcessDeposit::dispatch($userWallet->id);
-            
+
             return response()->json([
                 'status' => true,
 
