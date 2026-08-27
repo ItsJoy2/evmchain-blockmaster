@@ -72,6 +72,8 @@ class MerchantUserWalletController extends Controller
                     true,
             ]);
 
+            ProcessDeposit::dispatch($userWallet->id);
+            
             return response()->json([
                 'status' => true,
 
