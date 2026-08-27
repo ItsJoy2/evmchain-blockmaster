@@ -4,6 +4,7 @@ use App\Http\Controllers\admin\UserController;
 use App\Http\Controllers\api\Client\Auth\UserAuthController;
 use App\Http\Controllers\api\Client\ClientTransactionController;
 use App\Http\Controllers\api\Client\ClientWalletBalanceController;
+use App\Http\Controllers\api\Single\MerchantUserWalletController;
 use App\Http\Controllers\api\Client\ClientWithdrawController;
 use App\Http\Controllers\api\Client\PackageController;
 use App\Http\Controllers\api\Invoice\InvoiceCreateController;
@@ -53,3 +54,5 @@ Route::prefix('v1')->middleware('signature')->group(function () {
     Route::get('test', [PaymentJobController::class, 'allBalance']);
 
     Route::get('payments/{id}', [PaymentJobController::class, 'checkNewPayment']);
+
+    Route::post('create/user-wallet',[MerchantUserWalletController::class, 'create']);
