@@ -226,6 +226,7 @@ class PaymentJobController extends Controller
             'token' => $payment->token_name,
         ]);
     }
+    
     public function invoiceData($invoice_id)
     {$invoice = PaymentJobs::where('invoice_id', $invoice_id)->select('status','token_name','wallet_address','received_amount','created_at')->first();
         if (!$invoice) {

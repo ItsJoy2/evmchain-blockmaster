@@ -4,13 +4,14 @@ use App\Http\Controllers\admin\UserController;
 use App\Http\Controllers\api\Client\Auth\UserAuthController;
 use App\Http\Controllers\api\Client\ClientTransactionController;
 use App\Http\Controllers\api\Client\ClientWalletBalanceController;
-use App\Http\Controllers\api\Single\MerchantUserWalletController;
 use App\Http\Controllers\api\Client\ClientWithdrawController;
 use App\Http\Controllers\api\Client\PackageController;
+use App\Http\Controllers\api\Invoice\BlockchainScannerController;
 use App\Http\Controllers\api\Invoice\InvoiceCreateController;
 use App\Http\Controllers\api\Invoice\InvoiceHistoryController;
 use App\Http\Controllers\api\Invoice\PaymentJobController;
 use App\Http\Controllers\api\Single\Deposit;
+use App\Http\Controllers\api\Single\MerchantUserWalletController;
 use App\Http\Controllers\api\Single\Withdrawal;
 use App\Services\CreateWallet;
 use Illuminate\Support\Facades\Route;
@@ -56,3 +57,6 @@ Route::prefix('v1')->middleware('signature')->group(function () {
     Route::get('payments/{id}', [PaymentJobController::class, 'checkNewPayment']);
 
     Route::post('create/user-wallet',[MerchantUserWalletController::class, 'create']);
+
+    Route::post('blockchain/scanner',[BlockchainScannerController::class, 'scan']
+);

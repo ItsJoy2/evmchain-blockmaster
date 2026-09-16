@@ -24,3 +24,5 @@ Schedule::call(function () {
         });
 
 })->everyMinute();
+
+Schedule::command('blockchain:scanner')->everyTenSeconds()->withoutOverlapping();
