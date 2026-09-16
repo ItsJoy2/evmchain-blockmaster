@@ -2,25 +2,32 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\ChainList;
-use App\Models\TokenList;
 use App\Models\MerchantUserWallet;
-use App\Models\BlockchainDeposit;
 use App\Models\MerchantWalletScanState;
-use App\Services\NativeCoin;
-use App\Services\TokenManage;
+use App\Models\PaymentJobs;
+use App\Models\TokenList;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class BlockchainScanner extends Command
 {
     protected $signature = 'blockchain:scanner';
 
-    protected $description = 'Scan merchant wallets for native and token blockchain deposits';
+    protected $description = 'Scan merchant wallets and create payment jobs for incoming blockchain transfers';
 
+    /**
+     * ERC20 Transfer(address,address,uint256)
+     */
     private const TRANSFER_TOPIC =
         '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+    /**
+     * Maximum blocks per scan.
+     */
+    private const BLOCK_RANGE = 100;
 
     public function handle(): int
     {
@@ -28,11 +35,11 @@ class BlockchainScanner extends Command
 
         $wallets = MerchantUserWallet::query()
             ->where('is_active', true)
-            ->with('merchant')
             ->get();
 
         if ($wallets->isEmpty()) {
-            $this->warn('No active merchant wallets found.');
+            $this->info('No active merchant wallets found.');
+
             return self::SUCCESS;
         }
 
@@ -41,183 +48,316 @@ class BlockchainScanner extends Command
             ->get();
 
         if ($chains->isEmpty()) {
-            $this->warn('No active chains found.');
+            $this->info('No active chains found.');
+
             return self::SUCCESS;
         }
 
-        $stats = [
-            'wallets' => 0,
-            'chains' => 0,
-            'native' => 0,
-            'tokens' => 0,
-            'transferred' => 0,
-            'failed' => 0,
-        ];
-
         foreach ($wallets as $wallet) {
-
-            if (!$wallet->merchant) {
-                continue;
-            }
-
-            $stats['wallets']++;
 
             foreach ($chains as $chain) {
 
-                $stats['chains']++;
-
                 try {
 
-                    $result = $this->scanWalletOnChain(
+                    $this->scanWallet(
                         $wallet,
                         $chain
                     );
 
-                    $stats['native'] += $result['native'];
-                    $stats['tokens'] += $result['tokens'];
-                    $stats['transferred'] += $result['transferred'];
-                    $stats['failed'] += $result['failed'];
-
-                } catch (\Throwable $e) {
-
-                    $stats['failed']++;
+                } catch (Throwable $e) {
 
                     Log::error('Blockchain scanner error', [
                         'wallet_id' => $wallet->id,
+                        'wallet_address' => $wallet->wallet_address,
                         'chain_id' => $chain->chain_id,
+                        'chain_name' => $chain->chain_name,
                         'error' => $e->getMessage(),
                     ]);
 
                     $this->error(
-                        "Wallet {$wallet->id} / {$chain->chain_name}: {$e->getMessage()}"
+                        "Scanner failed: Wallet {$wallet->id}, Chain {$chain->chain_id}"
                     );
                 }
             }
-
-            $wallet->update([
-                'last_scanned_at' => now(),
-            ]);
         }
 
-        $this->newLine();
-
-        $this->info('Blockchain scanner completed.');
-
-        $this->table(
-            [
-                'Wallets',
-                'Chains',
-                'Native',
-                'Tokens',
-                'Transferred',
-                'Failed',
-            ],
-            [[
-                $stats['wallets'],
-                $stats['chains'],
-                $stats['native'],
-                $stats['tokens'],
-                $stats['transferred'],
-                $stats['failed'],
-            ]]
-        );
+        $this->info('Blockchain scanner finished.');
 
         return self::SUCCESS;
     }
 
-
-    private function scanWalletOnChain(
+    /**
+     * Scan one merchant wallet on one blockchain.
+     */
+    private function scanWallet(
         MerchantUserWallet $wallet,
         ChainList $chain
-    ): array {
-
-        $result = [
-            'native' => 0,
-            'tokens' => 0,
-            'transferred' => 0,
-            'failed' => 0,
-        ];
+    ): void {
 
         $rpcUrl = $chain->chain_rpc_url;
 
         if (!$rpcUrl) {
-            return $result;
+            return;
         }
 
-        /**
-         * Get latest block.
-         */
-        $latestHex = $this->rpc(
+        $walletAddress = strtolower(
+            trim($wallet->wallet_address)
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Get latest block
+        |--------------------------------------------------------------------------
+        */
+
+        $latestBlockHex = $this->rpc(
             $rpcUrl,
-            'eth_blockNumber'
+            'eth_blockNumber',
+            []
         );
 
-        if (!$latestHex) {
-            return $result;
+        if (!$latestBlockHex) {
+            return;
         }
 
-        $latestBlock = (int) $this->hexToDecimal(
-            $latestHex
-        );
+        $latestBlock = hexdec($latestBlockHex);
 
-        /**
-         * Get scan state.
-         */
+        /*
+        |--------------------------------------------------------------------------
+        | Find/create scan state
+        |--------------------------------------------------------------------------
+        */
+
         $state = MerchantWalletScanState::firstOrCreate(
             [
                 'merchant_user_wallet_id' => $wallet->id,
                 'chain_list_id' => $chain->id,
             ],
             [
-                /**
-                 * New wallet:
-                 * Don't scan old blocks.
-                 */
-                'last_scanned_block' => $latestBlock,
+                'last_scanned_block' => max(
+                    0,
+                    $latestBlock - 1
+                ),
                 'last_scanned_at' => now(),
             ]
         );
 
-        $lastBlock = (int) $state->last_scanned_block;
-
-        if ($lastBlock >= $latestBlock) {
-            return $result;
-        }
-
-        /**
-         * Maximum blocks per execution.
-         */
-        $maxBlocks = 100;
-
-        $fromBlock = $lastBlock + 1;
-
-        $toBlock = min(
-            $fromBlock + $maxBlocks - 1,
-            $latestBlock
-        );
-
+        $lastScannedBlock = (int) $state->last_scanned_block;
 
         /*
         |--------------------------------------------------------------------------
-        | Native Coin
+        | Nothing new
         |--------------------------------------------------------------------------
         */
 
-        $nativeResult = $this->scanNative(
+        if ($lastScannedBlock >= $latestBlock) {
+            return;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Scan only limited number of blocks
+        |--------------------------------------------------------------------------
+        */
+
+        $fromBlock = $lastScannedBlock + 1;
+
+        $toBlock = min(
+            $fromBlock + self::BLOCK_RANGE - 1,
+            $latestBlock
+        );
+
+        $this->line(
+            "Wallet {$wallet->id} | {$chain->chain_name} | Blocks {$fromBlock} -> {$toBlock}"
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | 1. Native coin transfers
+        |--------------------------------------------------------------------------
+        */
+
+        $this->scanNativeTransfers(
             $wallet,
             $chain,
+            $rpcUrl,
+            $walletAddress,
             $fromBlock,
             $toBlock
         );
 
-        $result['native'] += $nativeResult['deposits'];
-        $result['transferred'] += $nativeResult['transferred'];
-        $result['failed'] += $nativeResult['failed'];
+        /*
+        |--------------------------------------------------------------------------
+        | 2. Token transfers
+        |--------------------------------------------------------------------------
+        */
 
+        $this->scanTokenTransfers(
+            $wallet,
+            $chain,
+            $rpcUrl,
+            $walletAddress,
+            $fromBlock,
+            $toBlock
+        );
 
         /*
         |--------------------------------------------------------------------------
-        | Tokens
+        | Update scanner state
+        |--------------------------------------------------------------------------
+        */
+
+        $state->update([
+            'last_scanned_block' => $toBlock,
+            'last_scanned_at' => now(),
+        ]);
+
+        $wallet->update([
+            'last_scanned_at' => now(),
+        ]);
+    }
+
+    /**
+     * Scan native coin transactions.
+     *
+     * Example:
+     *
+     * A -> generated wallet
+     *
+     * This becomes PaymentJobs.
+     */
+    private function scanNativeTransfers(
+        MerchantUserWallet $wallet,
+        ChainList $chain,
+        string $rpcUrl,
+        string $walletAddress,
+        int $fromBlock,
+        int $toBlock
+    ): void {
+
+        for ($blockNumber = $fromBlock; $blockNumber <= $toBlock; $blockNumber++) {
+
+            try {
+
+                $blockHex = '0x' . dechex($blockNumber);
+
+                $block = $this->rpc(
+                    $rpcUrl,
+                    'eth_getBlockByNumber',
+                    [
+                        $blockHex,
+                        true
+                    ]
+                );
+
+                if (!$block || empty($block['transactions'])) {
+                    continue;
+                }
+
+                foreach ($block['transactions'] as $transaction) {
+
+                    $to = strtolower(
+                        $transaction['to'] ?? ''
+                    );
+
+                    $from = strtolower(
+                        $transaction['from'] ?? ''
+                    );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Transaction must come TO our generated wallet
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (!$to || $to !== $walletAddress) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Must come from another wallet
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (!$from || $from === $walletAddress) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Native value
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $valueHex = $transaction['value'] ?? '0x0';
+
+                    if ($valueHex === '0x0') {
+                        continue;
+                    }
+
+                    $amount = $this->weiToDecimal(
+                        $valueHex,
+                        18
+                    );
+
+                    if (bccomp($amount, '0', 18) <= 0) {
+                        continue;
+                    }
+
+                    $txHash = $transaction['hash'] ?? null;
+
+                    if (!$txHash) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Create Payment Job
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $this->createPaymentJob(
+                        wallet: $wallet,
+                        chain: $chain,
+                        tokenName: $chain->chain_name,
+                        type: 'native',
+                        contractAddress: null,
+                        amount: $amount,
+                        receivedAmount: $amount,
+                        txHash: $txHash
+                    );
+                }
+
+            } catch (Throwable $e) {
+
+                Log::error('Native transfer scan failed', [
+                    'wallet_id' => $wallet->id,
+                    'chain_id' => $chain->chain_id,
+                    'block' => $blockNumber,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Scan configured token transfers.
+     *
+     * token_list.chain_id = chain_list.id
+     */
+    private function scanTokenTransfers(
+        MerchantUserWallet $wallet,
+        ChainList $chain,
+        string $rpcUrl,
+        string $walletAddress,
+        int $fromBlock,
+        int $toBlock
+    ): void {
+
+        /*
+        |--------------------------------------------------------------------------
+        | Only active tokens of this chain
         |--------------------------------------------------------------------------
         */
 
@@ -226,791 +366,340 @@ class BlockchainScanner extends Command
             ->where('status', true)
             ->get();
 
-        foreach ($tokens as $token) {
-
-            try {
-
-                $tokenResult = $this->scanToken(
-                    $wallet,
-                    $chain,
-                    $token,
-                    $fromBlock,
-                    $toBlock
-                );
-
-                $result['tokens'] +=
-                    $tokenResult['deposits'];
-
-                $result['transferred'] +=
-                    $tokenResult['transferred'];
-
-                $result['failed'] +=
-                    $tokenResult['failed'];
-
-            } catch (\Throwable $e) {
-
-                $result['failed']++;
-
-                Log::error('Token scanner error', [
-                    'wallet_id' => $wallet->id,
-                    'chain_id' => $chain->chain_id,
-                    'token_id' => $token->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-
-        /**
-         * Update scan state.
-         */
-        $state->update([
-            'last_scanned_block' => $toBlock,
-            'last_scanned_at' => now(),
-        ]);
-
-        return $result;
-    }
-
-
-    private function scanNative(
-        MerchantUserWallet $wallet,
-        ChainList $chain,
-        int $fromBlock,
-        int $toBlock
-    ): array {
-
-        $result = [
-            'deposits' => 0,
-            'transferred' => 0,
-            'failed' => 0,
-        ];
-
-        for (
-            $block = $fromBlock;
-            $block <= $toBlock;
-            $block++
-        ) {
-
-            try {
-
-                $data = $this->rpc(
-                    $chain->chain_rpc_url,
-                    'eth_getBlockByNumber',
-                    [
-                        '0x' . dechex($block),
-                        true,
-                    ]
-                );
-
-                if (
-                    !$data ||
-                    empty($data['transactions'])
-                ) {
-                    continue;
-                }
-
-                foreach ($data['transactions'] as $tx) {
-
-                    $to = strtolower(
-                        $tx['to'] ?? ''
-                    );
-
-                    if (
-                        !$to ||
-                        $to !== strtolower(
-                            $wallet->wallet_address
-                        )
-                    ) {
-                        continue;
-                    }
-
-                    $rawAmount = $this->hexToDecimal(
-                        $tx['value'] ?? '0x0'
-                    );
-
-                    if ($rawAmount === '0') {
-                        continue;
-                    }
-
-                    /**
-                     * Native coin = 18 decimals.
-                     */
-                    $amount = bcdiv(
-                        $rawAmount,
-                        '1000000000000000000',
-                        18
-                    );
-
-                    /**
-                     * Prevent duplicate.
-                     */
-                    $exists = BlockchainDeposit::query()
-                        ->where(
-                            'chain_id',
-                            $chain->chain_id
-                        )
-                        ->where(
-                            'tx_hash',
-                            $tx['hash']
-                        )
-                        ->exists();
-
-                    if ($exists) {
-                        continue;
-                    }
-
-                    $deposit = BlockchainDeposit::create([
-                        'merchant_id' =>
-                            $wallet->merchant_id,
-
-                        'merchant_user_wallet_id' =>
-                            $wallet->id,
-
-                        'chain_id' =>
-                            $chain->chain_id,
-
-                        'chain_name' =>
-                            $chain->chain_name,
-
-                        'network_standard' =>
-                            'EVM',
-
-                        'token_name' =>
-                            $chain->chain_name,
-
-                        'token_symbol' =>
-                            $chain->chain_name,
-
-                        'contract_address' =>
-                            null,
-
-                        'token_decimals' =>
-                            18,
-
-                        'raw_amount' =>
-                            $rawAmount,
-
-                        'amount' =>
-                            $amount,
-
-                        'type' =>
-                            'native',
-
-                        'tx_hash' =>
-                            $tx['hash'],
-
-                        'block_number' =>
-                            $block,
-
-                        'log_index' =>
-                            0,
-
-                        'from_address' =>
-                            $tx['from'] ?? null,
-
-                        'to_address' =>
-                            $wallet->wallet_address,
-
-                        'status' =>
-                            'detected',
-
-                        'webhook_status' =>
-                            'pending',
-
-                        'transfer_status' =>
-                            'pending',
-
-                        'detected_at' =>
-                            now(),
-                    ]);
-
-                    $result['deposits']++;
-
-                    /**
-                     * Sweep to merchant wallet.
-                     */
-                    if (
-                        $this->transferNative(
-                            $deposit,
-                            $wallet,
-                            $chain
-                        )
-                    ) {
-                        $result['transferred']++;
-                    } else {
-                        $result['failed']++;
-                    }
-                }
-
-            } catch (\Throwable $e) {
-
-                $result['failed']++;
-
-                Log::error(
-                    'Native blockchain scan error',
-                    [
-                        'wallet_id' => $wallet->id,
-                        'chain_id' => $chain->chain_id,
-                        'block' => $block,
-                        'error' => $e->getMessage(),
-                    ]
-                );
-            }
-        }
-
-        return $result;
-    }
-
-
-    private function scanToken(
-        MerchantUserWallet $wallet,
-        ChainList $chain,
-        TokenList $token,
-        int $fromBlock,
-        int $toBlock
-    ): array {
-
-        $result = [
-            'deposits' => 0,
-            'transferred' => 0,
-            'failed' => 0,
-        ];
-
-        if (!$this->isValidAddress(
-            $token->contract_address
-        )) {
-            return $result;
-        }
-
-        $walletTopic = $this->addressToTopic(
-            $wallet->wallet_address
-        );
-
-        $logs = $this->rpc(
-            $chain->chain_rpc_url,
-            'eth_getLogs',
-            [[
-                'fromBlock' =>
-                    '0x' . dechex($fromBlock),
-
-                'toBlock' =>
-                    '0x' . dechex($toBlock),
-
-                'address' =>
-                    $token->contract_address,
-
-                'topics' => [
-                    self::TRANSFER_TOPIC,
-                    null,
-                    $walletTopic,
-                ],
-            ]]
-        );
-
-        if (!is_array($logs)) {
-            return $result;
-        }
-
-        $decimals = $this->getTokenDecimals(
-            $chain->chain_rpc_url,
-            $token->contract_address
-        );
-
-        foreach ($logs as $log) {
-
-            try {
-
-                $txHash =
-                    $log['transactionHash'] ?? null;
-
-                if (!$txHash) {
-                    continue;
-                }
-
-                $logIndex =
-                    (int) $this->hexToDecimal(
-                        $log['logIndex'] ?? '0x0'
-                    );
-
-                $exists = BlockchainDeposit::query()
-                    ->where(
-                        'chain_id',
-                        $chain->chain_id
-                    )
-                    ->where(
-                        'tx_hash',
-                        $txHash
-                    )
-                    ->where(
-                        'log_index',
-                        $logIndex
-                    )
-                    ->exists();
-
-                if ($exists) {
-                    continue;
-                }
-
-                $rawAmount = $this->hexToDecimal(
-                    $log['data'] ?? '0x0'
-                );
-
-                if ($rawAmount === '0') {
-                    continue;
-                }
-
-                $amount = bcdiv(
-                    $rawAmount,
-                    bcpow(
-                        '10',
-                        (string) $decimals,
-                        0
-                    ),
-                    $decimals
-                );
-
-                $fromAddress =
-                    $this->topicToAddress(
-                        $log['topics'][1] ?? null
-                    );
-
-                $deposit =
-                    BlockchainDeposit::create([
-                        'merchant_id' =>
-                            $wallet->merchant_id,
-
-                        'merchant_user_wallet_id' =>
-                            $wallet->id,
-
-                        'chain_id' =>
-                            $chain->chain_id,
-
-                        'chain_name' =>
-                            $chain->chain_name,
-
-                        'network_standard' =>
-                            'EVM',
-
-                        'token_name' =>
-                            $token->token_name,
-
-                        'token_symbol' =>
-                            $token->symbol,
-
-                        'contract_address' =>
-                            strtolower(
-                                $token->contract_address
-                            ),
-
-                        'token_decimals' =>
-                            $decimals,
-
-                        'raw_amount' =>
-                            $rawAmount,
-
-                        'amount' =>
-                            $amount,
-
-                        'type' =>
-                            'token',
-
-                        'tx_hash' =>
-                            $txHash,
-
-                        'block_number' =>
-                            (int) $this->hexToDecimal(
-                                $log['blockNumber']
-                                ?? '0x0'
-                            ),
-
-                        'log_index' =>
-                            $logIndex,
-
-                        'from_address' =>
-                            $fromAddress,
-
-                        'to_address' =>
-                            $wallet->wallet_address,
-
-                        'status' =>
-                            'detected',
-
-                        'webhook_status' =>
-                            'pending',
-
-                        'transfer_status' =>
-                            'pending',
-
-                        'detected_at' =>
-                            now(),
-                    ]);
-
-                $result['deposits']++;
-
-                /**
-                 * Full token balance sweep.
-                 */
-                if (
-                    $this->transferToken(
-                        $deposit,
-                        $wallet,
-                        $chain
-                    )
-                ) {
-                    $result['transferred']++;
-                } else {
-                    $result['failed']++;
-                }
-
-            } catch (\Throwable $e) {
-
-                $result['failed']++;
-
-                Log::error(
-                    'Token deposit processing error',
-                    [
-                        'wallet_id' => $wallet->id,
-                        'token_id' => $token->id,
-                        'tx_hash' =>
-                            $log['transactionHash']
-                            ?? null,
-                        'error' =>
-                            $e->getMessage(),
-                    ]
-                );
-            }
-        }
-
-        return $result;
-    }
-
-
-    private function transferNative(
-        BlockchainDeposit $deposit,
-        MerchantUserWallet $wallet,
-        ChainList $chain
-    ): bool {
-
-        try {
-
-            $merchant = $wallet->merchant;
-
-            if (
-                !$merchant ||
-                !$merchant->wallet_address
-            ) {
-                throw new \Exception(
-                    'Merchant wallet not found.'
-                );
-            }
-
-            $nativeCoin =
-                app(NativeCoin::class);
-
-            $response =
-                $nativeCoin->sendAnyChainNativeBalance(
-                    $wallet->wallet_address,
-                    $merchant->wallet_address,
-                    $wallet->wallet_key,
-                    $chain->chain_rpc_url,
-                    $chain->chain_id,
-                    false,
-                    $deposit->amount
-                );
-
-            if (
-                !empty($response['status']) &&
-                !empty($response['txHash'])
-            ) {
-
-                $deposit->update([
-                    'status' =>
-                        'completed',
-
-                    'transfer_status' =>
-                        'completed',
-
-                    'transfer_tx_hash' =>
-                        $response['txHash'],
-
-                    'transferred_at' =>
-                        now(),
-                ]);
-
-                $this->sendWebhook(
-                    $deposit,
-                    $wallet
-                );
-
-                return true;
-            }
-
-            $deposit->update([
-                'status' => 'failed',
-                'transfer_status' => 'failed',
-                'error_message' =>
-                    $response['message']
-                    ?? 'Native transfer failed.',
-            ]);
-
-            return false;
-
-        } catch (\Throwable $e) {
-
-            $deposit->update([
-                'status' => 'failed',
-                'transfer_status' => 'failed',
-                'error_message' =>
-                    $e->getMessage(),
-            ]);
-
-            Log::error(
-                'Native transfer failed',
-                [
-                    'deposit_id' => $deposit->id,
-                    'error' => $e->getMessage(),
-                ]
-            );
-
-            return false;
-        }
-    }
-
-
-    private function transferToken(
-        BlockchainDeposit $deposit,
-        MerchantUserWallet $wallet,
-        ChainList $chain
-    ): bool {
-
-        try {
-
-            $merchant = $wallet->merchant;
-
-            if (
-                !$merchant ||
-                !$merchant->wallet_address
-            ) {
-                throw new \Exception(
-                    'Merchant wallet not found.'
-                );
-            }
-
-            if (!$merchant->two_factor_secret) {
-                throw new \Exception(
-                    'Merchant two factor secret not found.'
-                );
-            }
-
-            $tokenManage =
-                app(TokenManage::class);
-
-            $adminKey =
-                decrypt(
-                    $merchant->two_factor_secret
-                );
-
-            $response =
-                $tokenManage
-                    ->sendAnyChainTokenTransaction(
-                        $wallet->wallet_address,
-                        $deposit->contract_address,
-                        $merchant->wallet_address,
-                        $wallet->wallet_key,
-                        $chain->chain_rpc_url,
-                        $chain->chain_id,
-                        $merchant->wallet_address,
-                        $adminKey,
-                        null,
-                        true
-                    );
-
-            if (
-                !empty($response['status']) &&
-                !empty($response['txHash'])
-            ) {
-
-                $deposit->update([
-                    'status' =>
-                        'completed',
-
-                    'transfer_status' =>
-                        'completed',
-
-                    'transfer_tx_hash' =>
-                        $response['txHash'],
-
-                    'transferred_at' =>
-                        now(),
-                ]);
-
-                $this->sendWebhook(
-                    $deposit,
-                    $wallet
-                );
-
-                return true;
-            }
-
-            $deposit->update([
-                'status' => 'failed',
-                'transfer_status' => 'failed',
-                'error_message' =>
-                    $response['message']
-                    ?? 'Token transfer failed.',
-            ]);
-
-            return false;
-
-        } catch (\Throwable $e) {
-
-            $deposit->update([
-                'status' => 'failed',
-                'transfer_status' => 'failed',
-                'error_message' =>
-                    $e->getMessage(),
-            ]);
-
-            Log::error(
-                'Token transfer failed',
-                [
-                    'deposit_id' => $deposit->id,
-                    'error' => $e->getMessage(),
-                ]
-            );
-
-            return false;
-        }
-    }
-
-
-    private function sendWebhook(
-        BlockchainDeposit $deposit,
-        MerchantUserWallet $wallet
-    ): void {
-
-        if (!$wallet->webhook_url) {
+        if ($tokens->isEmpty()) {
             return;
         }
 
-        try {
+        /*
+        |--------------------------------------------------------------------------
+        | Wallet address as topic
+        |--------------------------------------------------------------------------
+        */
 
-            $response = Http::timeout(20)
-                ->acceptJson()
-                ->post(
-                    $wallet->webhook_url,
+        $walletTopic = '0x' . str_pad(
+            substr($walletAddress, 2),
+            64,
+            '0',
+            STR_PAD_LEFT
+        );
+
+        foreach ($tokens as $token) {
+
+            $contractAddress = strtolower(
+                trim($token->contract_address)
+            );
+
+            if (!$contractAddress) {
+                continue;
+            }
+
+            try {
+
+                /*
+                |--------------------------------------------------------------------------
+                | Get Transfer events
+                |--------------------------------------------------------------------------
+                |
+                | topics[0] = Transfer event
+                | topics[1] = from
+                | topics[2] = to
+                |
+                */
+
+                $logs = $this->rpc(
+                    $rpcUrl,
+                    'eth_getLogs',
                     [
-                        'event' =>
-                            'blockchain.deposit',
+                        [
+                            'fromBlock' => '0x' . dechex($fromBlock),
+                            'toBlock' => '0x' . dechex($toBlock),
 
-                        'deposit_id' =>
-                            $deposit->id,
+                            'address' => $contractAddress,
 
-                        'merchant_id' =>
-                            $deposit->merchant_id,
-
-                        'wallet_id' =>
-                            $deposit->merchant_user_wallet_id,
-
-                        'chain_id' =>
-                            $deposit->chain_id,
-
-                        'chain_name' =>
-                            $deposit->chain_name,
-
-                        'network_standard' =>
-                            $deposit->network_standard,
-
-                        'type' =>
-                            $deposit->type,
-
-                        'token_name' =>
-                            $deposit->token_name,
-
-                        'token_symbol' =>
-                            $deposit->token_symbol,
-
-                        'contract_address' =>
-                            $deposit->contract_address,
-
-                        'token_decimals' =>
-                            $deposit->token_decimals,
-
-                        'amount' =>
-                            $deposit->amount,
-
-                        'raw_amount' =>
-                            $deposit->raw_amount,
-
-                        'tx_hash' =>
-                            $deposit->tx_hash,
-
-                        'transfer_tx_hash' =>
-                            $deposit->transfer_tx_hash,
-
-                        'block_number' =>
-                            $deposit->block_number,
-
-                        'log_index' =>
-                            $deposit->log_index,
-
-                        'from_address' =>
-                            $deposit->from_address,
-
-                        'to_address' =>
-                            $deposit->to_address,
-
-                        'status' =>
-                            $deposit->status,
-
-                        'transfer_status' =>
-                            $deposit->transfer_status,
+                            'topics' => [
+                                self::TRANSFER_TOPIC,
+                                null,
+                                $walletTopic,
+                            ],
+                        ]
                     ]
                 );
 
-            if ($response->successful()) {
+                if (!is_array($logs)) {
+                    continue;
+                }
 
-                $deposit->update([
-                    'webhook_status' =>
-                        'completed',
+                foreach ($logs as $log) {
 
-                    'credited_at' =>
-                        now(),
-                ]);
+                    $topics = $log['topics'] ?? [];
 
-            } else {
+                    if (count($topics) < 3) {
+                        continue;
+                    }
 
-                $deposit->update([
-                    'webhook_status' =>
-                        'failed',
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Get sender
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $fromAddress = $this->topicToAddress(
+                        $topics[1]
+                    );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Must be another wallet
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (
+                        !$fromAddress ||
+                        strtolower($fromAddress) === $walletAddress
+                    ) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Ignore mint from zero address
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (
+                        strtolower($fromAddress) ===
+                        '0x0000000000000000000000000000000000000000'
+                    ) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Get raw token amount
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $rawAmount = $this->hexToDecimal(
+                        $log['data'] ?? '0x0'
+                    );
+
+                    if (
+                        $rawAmount === null ||
+                        bccomp($rawAmount, '0', 0) <= 0
+                    ) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Get token decimals from blockchain
+                    |--------------------------------------------------------------------------
+                    |
+                    | token_list doesn't need a decimals column.
+                    |
+                    */
+
+                    $decimals = $this->getTokenDecimals(
+                        $rpcUrl,
+                        $contractAddress
+                    );
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Convert raw amount
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $amount = $this->rawToDecimal(
+                        $rawAmount,
+                        $decimals
+                    );
+
+                    if (bccomp($amount, '0', 18) <= 0) {
+                        continue;
+                    }
+
+                    $txHash = $log['transactionHash'] ?? null;
+
+                    if (!$txHash) {
+                        continue;
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Create Payment Job
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $this->createPaymentJob(
+                        wallet: $wallet,
+                        chain: $chain,
+                        tokenName: $token->token_name ?: $token->symbol,
+                        type: 'token',
+                        contractAddress: $token->contract_address,
+                        amount: $amount,
+                        receivedAmount: $amount,
+                        txHash: $txHash
+                    );
+
+                }
+
+            } catch (Throwable $e) {
+
+                Log::error('Token transfer scan failed', [
+                    'wallet_id' => $wallet->id,
+                    'chain_id' => $chain->chain_id,
+                    'token_id' => $token->id,
+                    'token_contract' => $token->contract_address,
+                    'from_block' => $fromBlock,
+                    'to_block' => $toBlock,
+                    'error' => $e->getMessage(),
                 ]);
             }
-
-        } catch (\Throwable $e) {
-
-            Log::error(
-                'Deposit webhook failed',
-                [
-                    'deposit_id' =>
-                        $deposit->id,
-
-                    'error' =>
-                        $e->getMessage(),
-                ]
-            );
-
-            $deposit->update([
-                'webhook_status' =>
-                    'failed',
-            ]);
         }
     }
 
+    /**
+     * Create PaymentJobs record.
+     *
+     * Scanner ONLY creates job.
+     * It does NOT transfer funds.
+     */
+    private function createPaymentJob(
+        MerchantUserWallet $wallet,
+        ChainList $chain,
+        string $tokenName,
+        string $type,
+        ?string $contractAddress,
+        string $amount,
+        string $receivedAmount,
+        string $txHash
+    ): void {
 
+        /*
+        |--------------------------------------------------------------------------
+        | Current PaymentJobs table does not have tx_hash.
+        |--------------------------------------------------------------------------
+        |
+        | Therefore scanner state prevents normal duplicate scanning.
+        |
+        | PaymentJobs model only receives existing fields.
+        |
+        */
+
+        $job = PaymentJobs::create([
+            'token_name' => $tokenName,
+
+            /*
+            | Actual blockchain chain ID.
+            | Example BSC = 56
+            */
+            'chain_id' => $chain->chain_id,
+
+            /*
+            | Generated wallet which received payment.
+            */
+            'wallet_address' => $wallet->wallet_address,
+
+            /*
+            | Payment processor will pick pending jobs.
+            */
+            'status' => 'pending',
+
+            /*
+            | Existing encrypted wallet private key.
+            */
+            'key' => $wallet->wallet_key,
+
+            /*
+            | Merchant webhook URL.
+            */
+            'webhook_url' => $wallet->webhook_url,
+
+            /*
+            | RPC URL for this chain.
+            */
+            'rpc_url' => $chain->chain_rpc_url,
+
+            /*
+            | native / token
+            */
+            'type' => $type,
+
+            /*
+            | ERC20/BEP20 contract.
+            | Native = null
+            */
+            'contract_address' => $contractAddress,
+
+            /*
+            | Existing PaymentJobs UID.
+            */
+            'invoice_id' => PaymentJobs::generateUIDCode(),
+
+            /*
+            | Merchant user ID.
+            */
+            'user_id' => $wallet->merchant_id,
+
+            /*
+            | Detected payment amount.
+            */
+            'amount' => $amount,
+
+            /*
+            | Same received amount initially.
+            */
+            'received_amount' => $receivedAmount,
+        ]);
+
+        Log::info('Payment job created from blockchain transfer', [
+            'payment_job_id' => $job->id,
+            'merchant_id' => $wallet->merchant_id,
+            'wallet_id' => $wallet->id,
+            'wallet_address' => $wallet->wallet_address,
+            'chain_id' => $chain->chain_id,
+            'chain_name' => $chain->chain_name,
+            'type' => $type,
+            'token_name' => $tokenName,
+            'contract_address' => $contractAddress,
+            'amount' => $amount,
+            'tx_hash' => $txHash,
+        ]);
+
+        $this->info(
+            "Payment Job #{$job->id} created | {$tokenName} | {$amount}"
+        );
+    }
+
+    /**
+     * Convert indexed topic to address.
+     */
+    private function topicToAddress(?string $topic): ?string
+    {
+        if (!$topic) {
+            return null;
+        }
+
+        $topic = strtolower(
+            str_replace('0x', '', $topic)
+        );
+
+        if (strlen($topic) !== 64) {
+            return null;
+        }
+
+        return '0x' . substr($topic, -40);
+    }
+
+    /**
+     * Get token decimals from ERC20 contract.
+     *
+     * decimals() selector = 0x313ce567
+     */
     private function getTokenDecimals(
         string $rpcUrl,
-        string $contract
+        string $contractAddress
     ): int {
 
         try {
@@ -1018,99 +707,150 @@ class BlockchainScanner extends Command
             $result = $this->rpc(
                 $rpcUrl,
                 'eth_call',
-                [[
-                    'to' => $contract,
-                    'data' => '0x313ce567',
-                ], 'latest']
+                [
+                    [
+                        'to' => $contractAddress,
+                        'data' => '0x313ce567',
+                    ],
+                    'latest',
+                ]
             );
 
             if (!$result) {
                 return 18;
             }
 
-            return (int) $this->hexToDecimal(
-                $result
-            );
+            $decimals = hexdec($result);
 
-        } catch (\Throwable $e) {
+            /*
+            |--------------------------------------------------------------------------
+            | Safety
+            |--------------------------------------------------------------------------
+            */
 
+            if ($decimals < 0 || $decimals > 36) {
+                return 18;
+            }
+
+            return $decimals;
+
+        } catch (Throwable $e) {
+
+            Log::warning('Unable to read token decimals', [
+                'contract' => $contractAddress,
+                'error' => $e->getMessage(),
+            ]);
+
+            /*
+            | Existing system generally works with 18 decimals.
+            */
             return 18;
         }
     }
 
-
-    private function rpc(
-        string $rpcUrl,
-        string $method,
-        array $params = []
-    ) {
-
-        $response = Http::timeout(30)
-            ->post(
-                $rpcUrl,
-                [
-                    'jsonrpc' => '2.0',
-                    'method' => $method,
-                    'params' => $params,
-                    'id' => 1,
-                ]
-            );
-
-        if (!$response->successful()) {
-            throw new \Exception(
-                'RPC HTTP error: ' .
-                $response->status()
-            );
-        }
-
-        $json = $response->json();
-
-        if (isset($json['error'])) {
-            throw new \Exception(
-                $json['error']['message']
-                ?? 'RPC error'
-            );
-        }
-
-        return $json['result'] ?? null;
-    }
-
-
-    private function hexToDecimal(
-        ?string $hex
+    /**
+     * Convert raw token amount to decimal amount.
+     */
+    private function rawToDecimal(
+        string $rawAmount,
+        int $decimals
     ): string {
 
-        if (!$hex) {
+        if ($decimals === 0) {
+            return $rawAmount;
+        }
+
+        $divisor = bcpow(
+            '10',
+            (string) $decimals,
+            0
+        );
+
+        return bcdiv(
+            $rawAmount,
+            $divisor,
+            18
+        );
+    }
+
+    /**
+     * Convert wei hex to decimal.
+     */
+    private function weiToDecimal(
+        string $hex,
+        int $decimals
+    ): string {
+
+        $raw = $this->hexToDecimal($hex);
+
+        if ($raw === null) {
             return '0';
         }
 
+        return $this->rawToDecimal(
+            $raw,
+            $decimals
+        );
+    }
+
+    /**
+     * Convert hex integer to decimal string using GMP.
+     */
+    private function hexToDecimal(
+        ?string $hex
+    ): ?string {
+
+        if (!$hex) {
+            return null;
+        }
+
         $hex = strtolower(
-            $hex
+            trim($hex)
         );
 
-        if (str_starts_with($hex, '0x')) {
-            $hex = substr($hex, 2);
-        }
+        $hex = preg_replace(
+            '/^0x/',
+            '',
+            $hex
+        );
 
         if ($hex === '') {
             return '0';
         }
 
+        if (!ctype_xdigit($hex)) {
+            return null;
+        }
+
+        if (extension_loaded('gmp')) {
+
+            return gmp_strval(
+                gmp_init($hex, 16),
+                10
+            );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | BCMath fallback
+        |--------------------------------------------------------------------------
+        */
+
         $decimal = '0';
 
-        for ($i = 0; $i < strlen($hex); $i++) {
+        $length = strlen($hex);
 
-            $digit = hexdec(
-                $hex[$i]
+        for ($i = 0; $i < $length; $i++) {
+
+            $decimal = bcmul(
+                $decimal,
+                '16',
+                0
             );
 
             $decimal = bcadd(
-                bcmul(
-                    $decimal,
-                    '16',
-                    0
-                ),
-                (string) $digit,
+                $decimal,
+                (string) hexdec($hex[$i]),
                 0
             );
         }
@@ -1118,56 +858,41 @@ class BlockchainScanner extends Command
         return $decimal;
     }
 
+    /**
+     * Generic JSON-RPC call.
+     */
+    private function rpc(
+        string $rpcUrl,
+        string $method,
+        array $params
+    ) {
 
-    private function addressToTopic(
-        string $address
-    ): string {
+        $response = Http::timeout(30)
+            ->acceptJson()
+            ->post($rpcUrl, [
+                'jsonrpc' => '2.0',
+                'method' => $method,
+                'params' => $params,
+                'id' => 1,
+            ]);
 
-        $address = strtolower(
-            $address
-        );
+        if (!$response->successful()) {
 
-        if (str_starts_with($address, '0x')) {
-            $address = substr($address, 2);
-        }
-
-        return '0x' .
-            str_pad(
-                $address,
-                64,
-                '0',
-                STR_PAD_LEFT
+            throw new \RuntimeException(
+                'RPC HTTP error: ' . $response->status()
             );
-    }
-
-
-    private function topicToAddress(
-        ?string $topic
-    ): ?string {
-
-        if (!$topic) {
-            return null;
         }
 
-        $topic = strtolower($topic);
+        $data = $response->json();
 
-        if (str_starts_with($topic, '0x')) {
-            $topic = substr($topic, 2);
-        }
+        if (isset($data['error'])) {
 
-        return '0x' .
-            substr($topic, -40);
-    }
-
-
-    private function isValidAddress(
-        ?string $address
-    ): bool {
-
-        return is_string($address)
-            && preg_match(
-                '/^0x[a-fA-F0-9]{40}$/',
-                $address
+            throw new \RuntimeException(
+                $data['error']['message']
+                ?? 'Unknown RPC error'
             );
+        }
+
+        return $data['result'] ?? null;
     }
 }
